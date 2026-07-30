@@ -1264,6 +1264,22 @@ describe('Sortable lists controller', () => {
         expect.objectContaining({ method: 'PUT' }),
       );
     });
+  });
+
+  // "Collapse a wider selection onto the dragged card" and "select the
+  // dragged card" are different things; only the first is in scope. With
+  // nothing selected, a drag must leave the selection empty rather than
+  // manufacturing a one-card batch the user never asked for.
+  it('leaves an empty selection empty when a drag starts with nothing selected', async () => {
+    const { root, firstSourceItem } = renderSelectableRoot();
+    await ctx.nextFrame();
+    const controller = ctx.application.getControllerForElementAndIdentifier(root, 'sortable-lists') as SortableListsControllerType;
+
+    controller.collapseSelectionForDrag(firstSourceItem);
+
+    expect(document.querySelector('[data-batch-selected]')).toBeNull();
+  });
+
   const click = (element:HTMLElement, init:MouseEventInit = {}) => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init }));
   };

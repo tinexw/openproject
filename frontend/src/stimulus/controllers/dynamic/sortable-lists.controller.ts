@@ -218,7 +218,11 @@ export default class SortableListsController extends Controller<HTMLElement> imp
   }
 
   collapseSelectionForDrag(itemElement:HTMLElement):void {
-    if (!this.selectionEnabled) {
+    // Collapsing a wider selection onto the dragged card and selecting the
+    // dragged card are different things; only the first is in scope here.
+    // With nothing selected there is nothing to collapse, so a drag must not
+    // manufacture a one-card batch the user never asked for.
+    if (!this.selectionEnabled || this.selection.size === 0) {
       return;
     }
 

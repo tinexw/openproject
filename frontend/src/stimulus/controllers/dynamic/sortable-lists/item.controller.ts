@@ -234,6 +234,10 @@ export default class ItemController extends Controller<HTMLElement> implements R
       },
       getInitialData: () => this.getItemData(),
       onDragStart: () => {
+        // One drag moves one item for now, so any wider batch collapses onto
+        // it. AGILE-278 replaces this with a batch drag; until then, nothing
+        // should suggest that the rest of the selection came along.
+        this.root?.collapseSelectionForDrag(this.element);
         // Cancels drops landing outside registered drop targets. This also
         // guards the external data channel: a misdropped card carrying
         // text/uri-list would otherwise navigate the current tab to that URL.

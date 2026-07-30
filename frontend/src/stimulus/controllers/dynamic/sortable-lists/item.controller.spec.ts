@@ -1332,5 +1332,26 @@ describe('Sortable lists item controller', () => {
 
       expect(document.activeElement).toBe(item);
     });
+
+    it('collapses the batch onto the dragged item when a drag starts', async () => {
+      const item = await renderItem({ movable: true });
+      const controller = controllerFor(item);
+      const collapseSelectionForDrag = vi.fn();
+      const root:SortableListsRoot = {
+        element: item,
+        busy: false,
+        selectionEnabled: true,
+        moveInDirection: vi.fn(),
+        moveAvailability: vi.fn(() => null),
+        ownerListElementOf: vi.fn(() => null),
+        collapseSelectionForDrag,
+      };
+
+      controller.connectRoot(root);
+
+      vi.mocked(draggable).mock.lastCall?.[0].onDragStart?.(dragEventPayload(item));
+
+      expect(collapseSelectionForDrag).toHaveBeenCalledWith(item);
+    });
   });
 });
