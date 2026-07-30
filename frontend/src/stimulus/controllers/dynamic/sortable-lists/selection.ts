@@ -273,6 +273,11 @@ function listItems(root:HTMLElement, from:HTMLElement):HTMLElement[] {
   return list ? Array.from(list.querySelectorAll<HTMLElement>(sortableItemSelector)) : [];
 }
 
+// Arrows step through the list as rendered, non-movable cards included: the
+// design's keyboard table does not qualify them, and a card in the way is
+// still a real card to land on. This is deliberately not symmetric with
+// listBoundaryItem below, which does filter — keep it that way rather than
+// "fixing" it to match.
 export function neighbourItem(root:HTMLElement, from:HTMLElement, offset:1|-1):HTMLElement|null {
   const items = listItems(root, from);
   const index = items.indexOf(from);
@@ -284,12 +289,17 @@ export function neighbourItem(root:HTMLElement, from:HTMLElement, offset:1|-1):H
   return items[index + offset] ?? null;
 }
 
+// Unlike neighbourItem, Home/End are specified to land on the first/last
+// *movable* card in the list: the design's keyboard table reads "Focus the
+// first/last loaded movable card in the list". A trailing or leading
+// non-movable card (a locked item, say) is skipped rather than becoming the
+// jump target.
 export function listBoundaryItem(
   root:HTMLElement,
   from:HTMLElement,
   edge:'first'|'last',
 ):HTMLElement|null {
-  const items = listItems(root, from);
+  const items = listItems(root, from).filter(isMovableItem);
 
   if (items.length === 0) {
     return null;

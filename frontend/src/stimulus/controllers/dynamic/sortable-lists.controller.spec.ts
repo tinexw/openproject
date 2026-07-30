@@ -1334,6 +1334,22 @@ describe('Sortable lists controller', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  // A modified gesture must be consumed even while a move is in flight: if it
+  // fell through unconsumed to the card's own click handler, the details pane
+  // would open a moment later on a click the user meant as a selection
+  // toggle. The selection itself still waits for the move to finish.
+  it('consumes a modified click during a busy move without changing the selection', async () => {
+    const { root, items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    root.setAttribute('data-sortable-lists-busy', 'true');
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
+
+    items[0].dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(items.some(isSelected)).toBe(false);
+  });
+
   it('toggles a card without navigating on a meta click', async () => {
     const { items } = renderSelectableRoot();
     await ctx.nextFrame();
@@ -1449,6 +1465,313 @@ describe('Sortable lists controller', () => {
     await ctx.nextFrame();
 
     click(items[0]);
+
+    expect(items.some(isSelected)).toBe(false);
+  });
+
+  const keydown = (target:HTMLElement, key:string, init:KeyboardEventInit = {}) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(event);
+    return event;
+  };
+
+  it('toggles the focused card on Space', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].focus();
+
+    const event = keydown(items[0], ' ');
+
+    expect(isSelected(items[0])).toBe(true);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('extends the range on Shift+Space', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    click(items[0]);
+    items[2].focus();
+
+    keydown(items[2], ' ', { shiftKey: true });
+
+    expect(items.filter(isSelected)).toEqual([items[0], items[1], items[2]]);
+  });
+
+  it('moves focus within the list on ArrowDown', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].focus();
+
+    keydown(items[0], 'ArrowDown');
+
+    expect(document.activeElement).toBe(items[1]);
+  });
+
+  // At a list boundary there is nowhere left for focus to go, but the key
+  // still has to be consumed: leaving it unconsumed falls through to the
+  // browser's native scrolling, moving the page while focus stays put.
+  it('consumes ArrowUp at the first card even though focus cannot move', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].focus();
+
+    const event = keydown(items[0], 'ArrowUp');
+
+    expect(document.activeElement).toBe(items[0]);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('consumes ArrowDown at the last card of a list even though focus cannot move', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[2].focus();
+
+    const event = keydown(items[2], 'ArrowDown');
+
+    expect(document.activeElement).toBe(items[2]);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('extends the range while moving focus on Shift+ArrowDown', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    click(items[0]);
+    items[0].focus();
+
+    keydown(items[0], 'ArrowDown', { shiftKey: true });
+
+    expect(document.activeElement).toBe(items[1]);
+    expect(items.filter(isSelected)).toEqual([items[0], items[1]]);
+  });
+
+  it('moves focus to the list boundaries on Home and End', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[1].focus();
+
+    keydown(items[1], 'End');
+    expect(document.activeElement).toBe(items[2]);
+
+    keydown(items[2], 'Home');
+    expect(document.activeElement).toBe(items[0]);
+  });
+
+  // Same boundary-scroll problem as the plain arrows above: Home on the
+  // first card and End on the last are both genuine no-ops for focus, and
+  // both still have to stop the browser from scrolling the page.
+  it('consumes Home at the first card even though focus cannot move', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].focus();
+
+    const event = keydown(items[0], 'Home');
+
+    expect(document.activeElement).toBe(items[0]);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('consumes End at the last card even though focus cannot move', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[2].focus();
+
+    const event = keydown(items[2], 'End');
+
+    expect(document.activeElement).toBe(items[2]);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  // The design's keyboard table specifies the first/last *movable* card for
+  // Home/End (unlike plain arrow steps, which are not qualified that way).
+  it('skips a non-movable card when moving to the list boundary on End', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[2].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    items[0].focus();
+
+    keydown(items[0], 'End');
+
+    expect(document.activeElement).toBe(items[1]);
+  });
+
+  // Reachable by arrowing up to the first card and then pressing Shift+Home:
+  // focus genuinely cannot move any further, but the range still has to
+  // resize out to that boundary.
+  it('resizes the range to the list boundary on Shift+Home even when focus cannot move', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    click(items[2]);
+    items[2].focus();
+    keydown(items[2], 'ArrowUp');
+    keydown(items[1], 'ArrowUp');
+
+    keydown(items[0], 'Home', { shiftKey: true });
+
+    expect(items.filter(isSelected)).toEqual([items[0], items[1], items[2]]);
+  });
+
+  // renderSelectableRoot's fixture spans two lists (items[0..2] in the source
+  // list, items[3..4] in the target list); select-all is root-wide, not
+  // confined to the focused card's own list the way a range is, so the
+  // selection must include movable cards from both.
+  it('selects every movable card across every list on meta A', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[1].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    items[0].focus();
+
+    keydown(items[0], 'a', { metaKey: true });
+
+    const selected = items.filter(isSelected);
+    expect(selected).toEqual([items[0], items[2], items[3], items[4]]);
+    // Proves root-wideness: a movable card from the list the focused card is
+    // NOT in was still selected.
+    expect(selected).toContain(items[3]);
+    expect(selected).not.toContain(items[1]);
+  });
+
+  // Would fail under list-scoped select-all: the focused card sits in the
+  // source list, and a movable card from the (different) target list must
+  // still end up selected.
+  it('selects a movable card in a different list than the focused one on meta A', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].focus();
+
+    keydown(items[0], 'a', { metaKey: true });
+
+    expect(isSelected(items[4])).toBe(true);
+  });
+
+  it('selects every movable card on ctrl A', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].focus();
+
+    keydown(items[0], 'a', { ctrlKey: true });
+
+    expect(items.filter(isSelected)).toEqual(items);
+  });
+
+  it('does nothing on a bare "a" without a modifier', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].focus();
+
+    const event = keydown(items[0], 'a');
+
+    expect(items.some(isSelected)).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  // The focused card anchors the batch when it is itself movable/selectable,
+  // per the design's prose ("uses the focused card as anchor when
+  // possible"). Focusing something other than the first card in document
+  // order rules out an anchor that just happens to coincide with a
+  // doc-order fallback.
+  it('anchors the batch on the focused card after meta A when it is movable', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[2].focus();
+
+    keydown(items[2], 'a', { metaKey: true });
+    keydown(items[0], ' ', { shiftKey: true });
+
+    expect(items.filter(isSelected)).toEqual([items[0], items[1], items[2]]);
+  });
+
+  // When the focused card cannot anchor the batch (not movable), the design
+  // falls back to "the first selected card" rather than leaving no anchor at
+  // all. A subsequent Shift gesture ranging against that fallback proves it
+  // is set: no anchor at all would collapse the range to a single card
+  // instead (see BatchSelection#toggle/`extendSelectionTo`'s `!anchor`
+  // branch).
+  it('anchors the batch on the first movable card after meta A when the focused card is not movable', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    items[0].focus();
+
+    keydown(items[0], 'a', { metaKey: true });
+    keydown(items[2], ' ', { shiftKey: true });
+
+    expect(items.filter(isSelected)).toEqual([items[1], items[2]]);
+  });
+
+  it('clears the batch on Escape', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    click(items[0]);
+    items[0].focus();
+
+    keydown(items[0], 'Escape');
+
+    expect(items.some(isSelected)).toBe(false);
+  });
+
+  // Escape only clears local selection state, which nothing an in-flight
+  // move depends on, so it must not be swallowed by the same busy gate that
+  // holds back the DOM-mutating gestures elsewhere in this handler.
+  it('clears the batch on Escape even during a busy move', async () => {
+    const { root, items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    click(items[0]);
+    items[0].focus();
+    root.setAttribute('data-sortable-lists-busy', 'true');
+
+    keydown(items[0], 'Escape');
+
+    expect(items.some(isSelected)).toBe(false);
+  });
+
+  // Escape must stay a no-op (and unconsumed) with nothing to clear, so it
+  // still reaches dialogs and menus rather than being swallowed here.
+  it('leaves Escape unconsumed when there is nothing to clear', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].focus();
+
+    const event = keydown(items[0], 'Escape');
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  // BatchSelection#toggle re-bases the anchor even on a deselect, so
+  // Space-then-Space-again empties the visible selection but leaves the
+  // anchor pointing at the card the user just deselected. Escape has to
+  // drop that too: a subsequent Shift gesture ranging from the stale anchor
+  // (rather than selecting only the clicked card) would prove it survived.
+  it('clears the stale anchor left by a deselect, not just a visible selection', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].focus();
+    keydown(items[0], ' ');
+    keydown(items[0], ' ');
+
+    keydown(items[0], 'Escape');
+    keydown(items[2], ' ', { shiftKey: true });
+
+    expect(items.filter(isSelected)).toEqual([items[2]]);
+  });
+
+  it('leaves Enter to the navigation handler', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].focus();
+
+    const event = keydown(items[0], 'Enter');
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('ignores keys from an interactive descendant', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    const input = document.createElement('input');
+    items[0].appendChild(input);
+    input.focus();
+
+    keydown(input, ' ');
 
     expect(items.some(isSelected)).toBe(false);
   });

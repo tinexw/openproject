@@ -282,8 +282,28 @@ describe('sortable-lists selection adapter', () => {
     expect(neighbourItem(root, itemFor('3'), 1)).toBeNull();
   });
 
+  // Deliberately not filtered by movability, unlike listBoundaryItem below:
+  // the design's keyboard table only qualifies Home/End as landing on a
+  // movable card, not the plain arrow step.
+  it('steps onto a non-movable card with the arrow', () => {
+    expect(neighbourItem(root, itemFor('4'), 1)).toBe(itemFor('5'));
+  });
+
   it('finds the first and last item of the containing list', () => {
     expect(listBoundaryItem(root, itemFor('2'), 'first')).toBe(itemFor('1'));
     expect(listBoundaryItem(root, itemFor('2'), 'last')).toBe(itemFor('3'));
+  });
+
+  // Sprint 8 holds movable 4 and non-movable 5 (see the fixture comment
+  // above): the trailing non-movable card must not become the End target.
+  it('skips a non-movable card at the list boundary', () => {
+    expect(listBoundaryItem(root, itemFor('4'), 'last')).toBe(itemFor('4'));
+  });
+
+  it('returns null when no movable card remains in the list', () => {
+    itemFor('4').setAttribute('data-sortable-lists--item-movable-value', 'false');
+
+    expect(listBoundaryItem(root, itemFor('4'), 'first')).toBeNull();
+    expect(listBoundaryItem(root, itemFor('4'), 'last')).toBeNull();
   });
 });
