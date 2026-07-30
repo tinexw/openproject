@@ -82,7 +82,8 @@ RSpec.describe Backlogs::WorkPackageCardListItemComponent, type: :component do
         sortable_lists__item_id_value: work_package.id,
         sortable_lists__item_type_value: "work_package",
         sortable_lists__item_confined_value: false,
-        sortable_lists__item_label_value: work_package.to_fs(:caption)
+        sortable_lists__item_label_value: work_package.to_fs(:caption),
+        sortable_lists__item_movable_value: true
       )
       expect(item.row_args[:draggable]).to be(true)
       expect(item.row_args).not_to include(:tabindex)
@@ -122,11 +123,22 @@ RSpec.describe Backlogs::WorkPackageCardListItemComponent, type: :component do
         described_class.new(work_package:, project:, container:, params:, current_user: limited_user)
       end
 
+      it "still renders the row as a sortable item" do
+        expect(item.row_args[:data]).to include(controller: "sortable-lists--item")
+      end
+
+      it "marks the item as not movable" do
+        expect(item.row_args[:data]).to include(sortable_lists__item_movable_value: false)
+      end
+
       it "does not mark the row as draggable" do
         expect(item.row_args[:data]).not_to include(:sortable_lists_prev_item_id)
         expect(item.row_args).not_to include(:draggable)
         expect(item.row_args).not_to include(:tabindex)
-        expect(item.row_args[:data]).not_to include(:sortable_lists__item_external_url_value)
+      end
+
+      it "still exposes the external URL for drag consumers" do
+        expect(item.row_args[:data]).to include(:sortable_lists__item_external_url_value)
       end
 
       it "keeps the card focusable so keyboard users can interact with it" do
@@ -171,7 +183,7 @@ RSpec.describe Backlogs::WorkPackageCardListItemComponent, type: :component do
       it "still offers the card as a drag handle", :aggregate_failures do
         render_inline(item.card)
 
-        expect(page).to have_css(".op-work-package-card[data-sortable-lists--item-target='preview handle']")
+        expect(page).to have_css(".op-work-package-card[data-sortable-lists--item-target='preview handle focus']")
         expect(page).to have_css(".Box-card--draggable")
       end
     end
@@ -236,7 +248,7 @@ RSpec.describe Backlogs::WorkPackageCardListItemComponent, type: :component do
         "[data-backlogs--work-package-id-value='#{work_package.id}']" \
         "[data-backlogs--work-package-display-id-value='#{work_package.display_id}']" \
         "[data-backlogs--work-package-full-url-value='#{work_package_path(work_package)}']" \
-        "[data-sortable-lists--item-target='preview handle']" \
+        "[data-sortable-lists--item-target='preview handle focus']" \
         "[tabindex='0']"
       )
     end

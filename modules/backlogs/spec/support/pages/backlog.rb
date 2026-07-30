@@ -608,9 +608,23 @@ module Pages
       end
     end
 
+    # Every row now carries `data-sortable-lists--item-id-value` regardless of
+    # whether the user may move it (a fixed row still anchors a neighbour's
+    # drop), so the item id is no longer what distinguishes a movable row.
+    # `draggable` and the item's `movable` value are set independently by the
+    # component and read by separate consumers (the browser's native drag
+    # start, and the item controller's own drag registration), so both are
+    # checked rather than trusting either alone to stay in sync.
+    def expect_work_package_draggable(work_package)
+      selector = work_package_selector(work_package)
+      expect(page).to have_css("#{selector}[draggable='true']")
+      expect(page).to have_css("#{selector}[data-sortable-lists--item-movable-value='true']")
+    end
+
     def expect_work_package_not_draggable(work_package)
-      expect(page)
-        .to have_no_css(draggable_work_package_selector(work_package))
+      selector = work_package_selector(work_package)
+      expect(page).to have_no_css("#{selector}[draggable='true']")
+      expect(page).to have_no_css("#{selector}[data-sortable-lists--item-movable-value='true']")
     end
 
     # A read-only card keeps its drag but is confined to its own list: it can
@@ -618,7 +632,7 @@ module Pages
     # confined value is what the foreign drop targets read.
     def expect_work_package_confined(work_package)
       expect(page)
-        .to have_css("#{draggable_work_package_selector(work_package)}" \
+        .to have_css("#{work_package_selector(work_package)}" \
                      "[data-sortable-lists--item-confined-value='true']")
       expect(page)
         .to have_css("#{work_package_selector(work_package)}[draggable]")
@@ -654,7 +668,7 @@ module Pages
           ]
         }
       ) do
-        moved_element = find(draggable_work_package_selector(work_package))
+        moved_element = find(work_package_selector(work_package))
         install_backlogs_move_request_probe
         begin
           pick_up_and_release_backlogs_item(moved_element)
@@ -742,7 +756,7 @@ module Pages
         raise ArgumentError, "You must specify exactly one of before, after or into"
       end
 
-      moved_element = find(draggable_work_package_selector(moved))
+      moved_element = find(work_package_selector(moved))
       target_element, edge =
         if before
           [find(work_package_selector(before)), :top]
@@ -774,7 +788,7 @@ module Pages
           ]
         }
       ) do
-        moved_element = find(draggable_work_package_selector(moved))
+        moved_element = find(work_package_selector(moved))
         target_element = find(list_body_selector(sprint_selector(into)))
         install_backlogs_move_request_probe
         begin
@@ -824,7 +838,7 @@ module Pages
     end
 
     def drag_work_package_to_backlog_inbox(work_package)
-      moved_element = find(draggable_work_package_selector(work_package))
+      moved_element = find(work_package_selector(work_package))
       inbox = find(backlog_inbox_selector)
       target_item = inbox.all("[data-sortable-lists--item-id-value]", minimum: 0).last
       target_element = target_item || inbox.find("[data-empty-list-item]")
@@ -839,7 +853,7 @@ module Pages
     end
 
     def drag_work_package_to_backlog_bucket(work_package, bucket)
-      moved_element = find(draggable_work_package_selector(work_package))
+      moved_element = find(work_package_selector(work_package))
       target_element = find(list_body_selector(bucket_selector(bucket)))
 
       wait_for_backlogs_turbo_stream(frame_reload: true) do
@@ -851,7 +865,7 @@ module Pages
     end
 
     def drag_work_package_to_sprint(work_package, sprint)
-      moved_element = find(draggable_work_package_selector(work_package))
+      moved_element = find(work_package_selector(work_package))
       target_element = find(list_body_selector(sprint_selector(sprint)))
       wait_for_backlogs_turbo_stream(frame_reload: true) do
         drag_backlogs_item(source: moved_element, target: target_element)
@@ -994,10 +1008,6 @@ module Pages
     # is the one place that convention lives.
     def menu_owner_overlay_selector(menu_owner)
       "##{ActionView::RecordIdentifier.dom_target(menu_owner, :menu)}-overlay"
-    end
-
-    def draggable_work_package_selector(work_package)
-      "#{work_package_selector(work_package)}[data-sortable-lists--item-id-value]"
     end
 
     # Located by the lock's accessible name so the expectation fails if the

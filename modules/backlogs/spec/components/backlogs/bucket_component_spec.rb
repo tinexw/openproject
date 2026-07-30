@@ -159,7 +159,7 @@ RSpec.describe Backlogs::BucketComponent, type: :component do
 
         expect(rendered_component).to have_css(".op-work-package-card") do |card|
           expect(card["data-controller"].split).to include("backlogs--work-package")
-          expect(card["data-sortable-lists--item-target"]).to eq("preview handle")
+          expect(card["data-sortable-lists--item-target"]).to eq("preview handle focus")
           expect(card["data-backlogs--work-package-split-url-value"])
             .to end_with(project_backlogs_backlog_details_path(project, work_package))
           expect(card["data-backlogs--work-package-full-url-value"])
@@ -236,13 +236,13 @@ RSpec.describe Backlogs::BucketComponent, type: :component do
              position: 1)
     end
 
-    it "does not mark work package rows as draggable" do
-      expect(rendered_component).to have_css(".Box-row#work_package_#{work_package.id}")
-      expect(rendered_component)
-        .to have_no_css(".Box-row#work_package_#{work_package.id}[data-sortable-lists--item-id-value]")
+    it "still renders the row as a sortable item, but not movable or draggable" do
+      expect(rendered_component).to have_css(".Box-row#work_package_#{work_package.id}") do |row|
+        expect(row["data-controller"]).to eq("sortable-lists--item")
+        expect(row["data-sortable-lists--item-movable-value"]).to eq("false")
+      end
       expect(rendered_component).to have_no_css(".Box-row#work_package_#{work_package.id}[draggable='true']")
       expect(rendered_component).to have_no_css(".op-work-package-card[data-sortable-lists--item-id-value]")
-      expect(rendered_component).to have_no_css(".op-work-package-card[data-sortable-lists--item-target]")
       expect(rendered_component).to have_no_css(".op-work-package-card[draggable='true']")
       expect(rendered_component).to have_no_css(".op-work-package-card.Box-card--draggable")
     end
