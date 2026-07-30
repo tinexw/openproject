@@ -79,34 +79,20 @@ export default class WorkPackageController extends Controller<HTMLElement> imple
     // Bookmarks and external links may still carry a numeric ID after the
     // switch to semantic mode, so accept either form here.
     if (id !== undefined && (id === this.idValue.toString() || id === this.displayIdValue)) {
-      this.markAsSelected();
       this.markAsCurrent();
     } else {
-      this.unmarkAsSelected();
       this.unmarkAsCurrent();
     }
   }
 
-  // Selection is applied synchronously on activation, before the split screen
-  // has loaded, so the list reacts immediately. With single selection any
-  // previously selected work package is cleared right away instead of waiting
-  // for its own URL sync.
-  markAsSelected():void {
-    document
-      .querySelectorAll('[data-controller~="backlogs--work-package"][data-selected]')
-      .forEach((other) => {
-        if (other !== this.element) {
-          other.removeAttribute('data-selected');
-        }
-      });
-
-    this.element.setAttribute('data-selected', '');
-  }
-
-  unmarkAsSelected():void {
-    this.element.removeAttribute('data-selected');
-  }
-
+  // Deliberately not set optimistically. Activation waits out the
+  // double-click delay below and may resolve to the full view instead, so
+  // asserting a current work package here would announce a navigation that
+  // has not happened and may not. For pointer activation, immediate feedback
+  // is the batch selection's job instead: a plain click forms a one-card
+  // batch synchronously. Enter has no such synchronous counterpart here, so
+  // keyboard activation has no immediate feedback until navigation lands —
+  // a sanctioned gap, not an oversight.
   markAsCurrent():void {
     this.element.setAttribute('aria-current', 'true');
   }
@@ -136,8 +122,6 @@ export default class WorkPackageController extends Controller<HTMLElement> imple
     if (this.shouldIgnoreMouseTarget(target)) return;
 
     if (this.clickTimeout !== null) return;
-
-    this.markAsSelected();
 
     this.clickTimeout = window.setTimeout(() => {
       this.clickTimeout = null;
@@ -172,7 +156,6 @@ export default class WorkPackageController extends Controller<HTMLElement> imple
     if (event.shiftKey) {
       this.openFullPane();
     } else {
-      this.markAsSelected();
       this.openSplitPane();
     }
   }

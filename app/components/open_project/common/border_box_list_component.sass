@@ -62,10 +62,16 @@
     // A transparent (not absent) border keeps the first row's height stable
     // when a state recolors it. These recolors repeat the state rules from
     // further down because this selector outweighs them.
+    //
+    // The two states below live on different elements: `data-batch-selected`
+    // is written on the row itself (the sortable item id it keys off is a row
+    // attribute), while `aria-current` is maintained by the backlogs work
+    // package controller on the card nested inside it. Match each accordingly
+    // rather than assuming both sit in the same place.
     > ul > .Box-row:first-of-type
       border-top-color: transparent
 
-      &:has(> .Box-card[data-selected])
+      &[data-batch-selected]
         border-top-color: var(--box-list-item-selected-border-color)
 
       &:has(> .Box-card[aria-current="true"])
@@ -198,10 +204,19 @@
   &:has(> .Box-card:focus-visible)
     background-color: var(--bgColor-muted)
 
-// Selected state: applied synchronously on activation by the
-// backlogs--work-package controller (single selection), so the list reacts
-// before the split screen has loaded.
-.Box-row:has(> .Box-card[data-selected])
+// Batch selection: the set of work packages chosen together for a batch
+// action, maintained by the sortable-lists root. Distinct from the current
+// work package below: batch selection fills the row's background in
+// addition to its border, while the current work package's stronger
+// border wins on its own, with no fill.
+//
+// `data-batch-selected` is written directly on the `.Box-row` (the sortable
+// item element the selection controller walks), not on a child, so it is
+// matched as an attribute of the row itself. The current-work-package rule
+// just below is different: `aria-current` is set on the `.Box-card` nested
+// inside the row, hence its `:has(> .Box-card[...])` form. Keep the two
+// asymmetric rather than "fixing" one to match the other.
+.Box-row[data-batch-selected]
   background-color: var(--box-list-item-selected-bg-color)
   @include op-box-list-item-edge-borders(var(--box-list-item-selected-border-color))
 
@@ -211,7 +226,7 @@
 
 // Current state: the card is open in the split screen. aria-current is
 // maintained by the backlogs--work-package controller once the URL reflects
-// the details pane; the strong border wins over a simultaneous selected state.
+// the details pane; the strong border wins over a simultaneous batch selection.
 .Box-row:has(> .Box-card[aria-current="true"])
   @include op-box-list-item-edge-borders(var(--box-list-item-pressed-border-color))
 
