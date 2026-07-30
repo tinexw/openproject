@@ -28,8 +28,10 @@
 
 // Sortable lists use a DOM contract shared by the root and item controllers:
 // the root has data-controller~="sortable-lists"; lists are sortable-lists--list
-// controllers wired to the root via outlets; items expose sortable-lists--item values;
-// sparse non-item rows may expose data-sortable-lists-prev-item-id.
+// controllers wired to the root via outlets; items expose sortable-lists--item
+// values and a movability flag; an item may be movable or not, and a non-movable
+// item still participates in list order and accepts drops; sparse non-item rows
+// may expose data-sortable-lists-prev-item-id.
 //
 // This module holds the drag-and-drop-agnostic half of that contract: reading
 // rows out of a list's rows container (rows are its direct children, whatever
@@ -41,6 +43,7 @@ export const sortableItemSelector = '[data-sortable-lists--item-id-value]';
 export const sortableListSelector = '[data-controller~="sortable-lists--list"]';
 export const sortablePreviousItemIdAttribute = 'data-sortable-lists-prev-item-id';
 export const sortableOmittedCountAttribute = 'data-sortable-lists-omitted-count';
+export const sortableItemMovableAttribute = 'data-sortable-lists--item-movable-value';
 
 // Rows are the direct children of the list's resolved rows container. The
 // rows container itself (a nested <ul>, the list element, ...) is decided by the list
@@ -70,6 +73,14 @@ export function resolveItemId(element:Element):string|null {
 }
 
 export const sortableItemTypeAttribute = 'data-sortable-lists--item-type-value';
+
+// Whether the item may originate a drag, enter a batch selection, or be moved
+// through the positional menu. Absent means movable: the item controller's
+// value defaults to true, so consumers that never render the attribute keep
+// their existing behaviour.
+export function isMovableItem(itemElement:Element):boolean {
+  return itemElement.getAttribute(sortableItemMovableAttribute) !== 'false';
+}
 
 export function resolveItemType(element:Element):string|null {
   const type = element.getAttribute(sortableItemTypeAttribute);

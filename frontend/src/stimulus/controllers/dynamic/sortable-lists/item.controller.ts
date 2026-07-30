@@ -54,7 +54,7 @@ import { renderDragPreview } from './preview';
 type CleanupFn = () => void;
 
 export default class ItemController extends Controller<HTMLElement> implements RootAwareChild {
-  static targets = ['handle', 'preview', 'moveItem', 'moveMenu', 'moveDivider'];
+  static targets = ['handle', 'preview', 'moveItem', 'moveMenu', 'moveDivider', 'focus'];
   static elements = { menu: 'action-menu' };
 
   static values = {
@@ -69,6 +69,7 @@ export default class ItemController extends Controller<HTMLElement> implements R
     // relocate to another container.
     confined: { type: Boolean, default: false },
     label: String,
+    movable: { type: Boolean, default: true },
   };
 
   declare readonly idValue:string;
@@ -81,6 +82,7 @@ export default class ItemController extends Controller<HTMLElement> implements R
   declare readonly confinedValue:boolean;
   declare readonly labelValue:string;
   declare readonly hasLabelValue:boolean;
+  declare readonly movableValue:boolean;
 
   declare readonly handleTarget:HTMLElement;
   declare readonly hasHandleTarget:boolean;
@@ -91,6 +93,8 @@ export default class ItemController extends Controller<HTMLElement> implements R
   declare readonly hasMoveMenuTarget:boolean;
   declare readonly moveDividerTarget:HTMLElement;
   declare readonly hasMoveDividerTarget:boolean;
+  declare readonly focusTarget:HTMLElement;
+  declare readonly hasFocusTarget:boolean;
 
   // Provided by the stimulus-elements blessing; absent when the item is not
   // inside a Primer action-menu (a drag-only consumer), in which case the move
@@ -143,7 +147,7 @@ export default class ItemController extends Controller<HTMLElement> implements R
 
   move(event:ActionEvent):void {
     const item = event.currentTarget;
-    if (!this.hasMenuElement || !(item instanceof HTMLElement)) {
+    if (!this.movableValue || !this.hasMenuElement || !(item instanceof HTMLElement)) {
       return;
     }
 
@@ -155,6 +159,13 @@ export default class ItemController extends Controller<HTMLElement> implements R
     if (isMoveDirection(direction)) {
       this.root?.moveInDirection(this.element, direction);
     }
+  }
+
+  // The focus host is the consumer's business: Backlogs puts the tab stop on
+  // the card inside the row, another consumer may make the row itself
+  // focusable. Both work without the root learning either shape.
+  focusItem():void {
+    (this.hasFocusTarget ? this.focusTarget : this.element).focus();
   }
 
   // Called by the root controller's outlet-connected callback.
@@ -178,14 +189,16 @@ export default class ItemController extends Controller<HTMLElement> implements R
 
   private register():void {
     this.cleanupFn = combine(
-      this.registerDraggable(),
+      // A non-movable item registers no draggable, but stays a drop target:
+      // it is still an addressable position its movable neighbours anchor on.
+      this.movableValue ? this.registerDraggable() : () => undefined,
       this.registerDropTarget(),
     );
   }
 
   // Both values are required: an item with an empty id can never be persisted,
-  // and an empty type never matches a list's accepted type, so the item would
-  // appear draggable yet silently refuse every drop. Surface that wiring mistake.
+  // and an empty type would never match a list's accepted type, so it could
+  // neither be dropped nor anchor a drop. Surface that wiring mistake.
   private warnOnMissingValues():void {
     if (!this.hasIdValue) {
       console.warn(

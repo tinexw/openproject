@@ -47,6 +47,7 @@ import {
 } from './sortable-lists/drag-and-drop';
 import {
   captureRowPositions,
+  isMovableItem,
   reorderRows,
   resolveDirectionalPreviousItemId,
   resolveItemId,
@@ -187,7 +188,11 @@ export default class SortableListsController extends Controller<HTMLElement> imp
   }
 
   moveInDirection(itemElement:HTMLElement, direction:MoveDirection):void {
-    if (this.busy) {
+    // Defence in depth. The menu is rendered server-side from a permission
+    // check that does not know about per-work-package movability, so a stale
+    // or over-permissive menu must not be able to execute a move the server
+    // will refuse.
+    if (this.busy || !isMovableItem(itemElement)) {
       return;
     }
 

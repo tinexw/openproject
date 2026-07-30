@@ -1101,6 +1101,19 @@ describe('Sortable lists controller', () => {
     expect(body.body.get('prev_id')).toBe('2');
   });
 
+  it('refuses a directional move for a non-movable item', async () => {
+    const { root, sourceList, firstSourceItem } = renderFixture();
+    firstSourceItem.setAttribute('data-sortable-lists--item-movable-value', 'false');
+    await ctx.nextFrame();
+
+    const controller = ctx.application.getControllerForElementAndIdentifier(root, 'sortable-lists') as SortableListsControllerType;
+    controller.moveInDirection(firstSourceItem, 'down');
+    await flushPromises();
+
+    expect(itemIds(sourceList)).toEqual(['1', '2', '3']);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('reports per-direction move availability for gating', async () => {
     const { root, firstSourceItem } = renderFixture();
     await ctx.nextFrame();
