@@ -1791,4 +1791,57 @@ describe('Sortable lists controller', () => {
 
     expect(items.some(isSelected)).toBe(false);
   });
+
+  function morphRoot(root:HTMLElement) {
+    root.dispatchEvent(new CustomEvent('turbo:morph-element', { bubbles: true }));
+  }
+
+  describe('reconciling the batch after a morph', () => {
+    it('reapplies the batch presentation after a morph strips it', async () => {
+      const { root, items } = renderSelectableRoot();
+      await ctx.nextFrame();
+      click(items[0]);
+      items[0].removeAttribute('data-batch-selected');
+
+      morphRoot(root);
+      await ctx.nextFrame();
+
+      expect(isSelected(items[0])).toBe(true);
+    });
+
+    it('clears a stale marker the morph preserved', async () => {
+      const { root, items } = renderSelectableRoot();
+      await ctx.nextFrame();
+      items[2].setAttribute('data-batch-selected', '');
+
+      morphRoot(root);
+      await ctx.nextFrame();
+
+      expect(isSelected(items[2])).toBe(false);
+    });
+
+    // A morph that removes a selected card's row has to drop it from the
+    // model, not merely from the DOM. orderedSelectedIds (which selectedIds()
+    // is built on) already filters its result down to elements still present
+    // in the document, so asserting on selectedIds() alone would pass even if
+    // the model were never pruned. The stale anchor is the one place the
+    // un-pruned model is observable from outside: with it left dangling,
+    // resolveRangeIds cannot find its row and extendSelectionTo reports the
+    // range as unavailable instead of starting a fresh selection, so a
+    // same-list Shift+click after the morph tells the two apart.
+    it('drops a removed member and its stale anchor from the model', async () => {
+      const { root, items } = renderSelectableRoot();
+      await ctx.nextFrame();
+      click(items[0]);
+      click(items[1], { metaKey: true });
+      items[1].remove();
+
+      morphRoot(root);
+      await ctx.nextFrame();
+      click(items[2], { shiftKey: true });
+
+      expect(isSelected(items[0])).toBe(false);
+      expect(isSelected(items[2])).toBe(true);
+    });
+  });
 });

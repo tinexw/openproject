@@ -177,6 +177,16 @@ export default class SortableListsController extends Controller<HTMLElement> imp
         child.connectRoot(this);
         child.reregister();
       });
+
+      // Reconciliation happens once per morph batch rather than per
+      // disconnect: a morph can replace a row with a fresh element for the
+      // same work package, and reacting to the disconnect alone would drop a
+      // member that is about to come straight back.
+      if (this.selectionEnabled) {
+        this.selection.prune(liveMovableIds(this.element));
+        applySelectionPresentation(this.element, this.selection.ids, this.selectionDescriptionIdValue);
+        this.renderSelectionCount();
+      }
     });
   };
 
