@@ -1,0 +1,55 @@
+<%# -- copyright
+OpenProject is an open source project management software.
+Copyright (C) the OpenProject GmbH
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License version 3.
+
+OpenProject is a fork of ChiliProject, which is a fork of Redmine. The copyright follows:
+Copyright (C) 2006-2013 Jean-Philippe Lang
+Copyright (C) 2010-2013 the ChiliProject Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+See COPYRIGHT and LICENSE files for more details.
+
+++%>
+
+<%=
+  render(
+    Primer::Box.new(
+      tag: :p,
+      mb: 2,
+      color: :muted,
+      font_size: :small,
+      data: { sortable_lists_target: "selectionCount" },
+      # Off, not merely the browser default: the root already announces
+      # selection changes through the shared Primer live region, so this
+      # region must stay silent or every change would announce twice.
+      aria: { live: :off },
+      # Stays in the layout at all times (no `hidden`/`display: none`): the
+      # stylesheet reserves this element's line height unconditionally, and
+      # `--empty` only ever toggles `visibility`, so a count appearing or
+      # disappearing never pushes the planning columns below it up or down.
+      # The controller flips the same class on selection change; this is
+      # only the empty-until-JS-runs starting state.
+      classes: "op-backlogs-selection-count op-backlogs-selection-count--empty"
+    )
+  )
+%>
+
+<%= render(Primer::Box.new(tag: :span, id: DESCRIPTION_ID, hidden: true)) do %>
+  <%= I18n.t("js.backlogs.selection.card_state") %>
+<% end %>

@@ -156,6 +156,25 @@ RSpec.describe "Backlogs::Backlog", :skip_csrf, type: :rails_request do
           expect(response.body).to include(%(data-sortable-lists--list-id-value="#{backlog_bucket.id}"))
         end
       end
+
+      context "when a bucket filter hides the inbox" do
+        shared_let(:backlog_bucket) { create(:backlog_bucket, project:) }
+
+        it "still renders the persistent selection count and shared description" do
+          get "/projects/#{project.identifier}/backlogs/backlog",
+              params: { bucket_ids: [backlog_bucket.id] },
+              headers: { "Turbo-Frame" => "backlogs_container" }
+
+          expect(response).to have_http_status(:ok)
+          # The inbox itself is filtered out...
+          expect(response.body).not_to include(%(id="inbox_project_#{project.id}"))
+          # ...but the count region and shared description survive regardless,
+          # because selection must stay visible and describable for whichever
+          # lists remain on screen.
+          expect(response.body).to include('data-sortable-lists-target="selectionCount"')
+          expect(response.body).to include(%(id="#{Backlogs::SelectionCountComponent::DESCRIPTION_ID}"))
+        end
+      end
     end
   end
 

@@ -1,0 +1,17 @@
+.op-backlogs-selection-count
+  // Reserved unconditionally: `1lh` is this very element's own computed
+  // line height, so the box is exactly as tall with the count text as
+  // without it. That equality is what a fixed pixel value could only ever
+  // approximate, and this element sits above both planning columns, so
+  // any difference at all reflows both of them on every selection change.
+  min-height: 1lh
+
+  &--empty
+    // `visibility: hidden`, not the `hidden` attribute and not `opacity:
+    // 0`. `hidden` (or `display: none`) would pull the element out of
+    // flow again, reflowing the columns below exactly as before.
+    // `opacity: 0` would keep it in the accessibility tree, which is
+    // wrong for an element with nothing to announce. `visibility: hidden`
+    // is the one option that keeps the reserved space while also leaving
+    // the accessibility tree.
+    visibility: hidden

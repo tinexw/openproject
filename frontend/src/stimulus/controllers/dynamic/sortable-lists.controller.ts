@@ -917,8 +917,18 @@ export default class SortableListsController extends Controller<HTMLElement> imp
     }
 
     const { size } = this.selection;
-    this.selectionCountTarget.textContent = size > 1 ? this.selectionMessage('selected') : '';
-    this.selectionCountTarget.hidden = size <= 1;
+    const empty = size <= 1;
+    // Its own key, distinct from the `selected` announcement: the on-screen
+    // count is read alongside the rest of the page's static chrome, not
+    // spoken once at gesture time, so it drops the announcement's trailing
+    // period rather than reusing that sentence verbatim.
+    this.selectionCountTarget.textContent = empty ? '' : this.selectionMessage('count_label');
+    // A class, not the `hidden` attribute: `hidden` pulls the element out
+    // of flow, so the planning columns beneath it jump every time the
+    // selection crosses the one/two-card boundary. The stylesheet keeps
+    // this element's height reserved at all times and only changes its
+    // visibility on this class, so toggling it causes no reflow.
+    this.selectionCountTarget.classList.toggle('op-backlogs-selection-count--empty', empty);
   }
 
   private announceSelection(key:'selected'|'cleared'|'not_selectable'|'range_unavailable'|'range_blocked'|'range_restarted'):void {

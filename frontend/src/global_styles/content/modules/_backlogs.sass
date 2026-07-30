@@ -44,7 +44,11 @@
       padding-right: 15px
 
 .op-backlogs-page
-  display: block
+  // A column so the persistent selection count (a sibling of
+  // .op-sprint-planning-container, rendered once above both scroll columns)
+  // stacks above it instead of overlapping it.
+  display: flex
+  flex-direction: column
   height: 100%
   container-name: backlogsListsContainer
   container-type: inline-size
@@ -53,7 +57,11 @@
   display: flex
   flex-direction: row
   gap: var(--stack-gap-normal)
-  height: 100%
+  // Shares the page height with the selection count above it rather than
+  // claiming the full 100% for itself, which would push it past the bottom
+  // of .op-backlogs-page.
+  flex: 1 1 auto
+  min-height: 0
   align-items: stretch
   overflow: hidden
 
