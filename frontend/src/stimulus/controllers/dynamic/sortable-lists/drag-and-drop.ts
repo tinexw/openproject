@@ -92,6 +92,7 @@ export interface SortableListData extends Record<string|symbol, unknown> {
 export interface SortableListsRoot {
   readonly element:HTMLElement;
   readonly busy:boolean;
+  readonly selectionEnabled:boolean;
   moveInDirection(itemElement:HTMLElement, direction:MoveDirection):void;
   // A snapshot for menu gating; the click path re-resolves against the live DOM.
   moveAvailability(itemElement:HTMLElement):MoveAvailability|null;
@@ -101,6 +102,10 @@ export interface SortableListsRoot {
   // The rows container of the item's innermost owning list, or null when the
   // item is not (yet) inside a list the root knows about.
   ownerRowsContainer(itemElement:HTMLElement):HTMLElement|null;
+  // Called when a drag begins. Until AGILE-278 lands, a drag moves exactly one
+  // item, so it collapses any wider batch onto the dragged card rather than
+  // implying that the rest came along.
+  collapseSelectionForDrag(itemElement:HTMLElement):void;
 }
 
 // Implemented by the list, item and scrollable controllers so the root can

@@ -119,13 +119,15 @@ describe('Sortable lists controller', () => {
   function renderFixture({
     moveUrlTemplate = '/move/{id}',
     optimistic = false,
-  }:{ moveUrlTemplate?:string|null; optimistic?:boolean } = {}) {
+    selectionEnabled = false,
+  }:{ moveUrlTemplate?:string|null; optimistic?:boolean; selectionEnabled?:boolean } = {}) {
     fixture.innerHTML = `
       <div
         id="sortable-root"
         data-controller="sortable-lists"
         ${moveUrlTemplate ? `data-sortable-lists-move-url-template-value="${moveUrlTemplate}"` : ''}
         ${optimistic ? 'data-sortable-lists-optimistic-value="true"' : ''}
+        ${selectionEnabled ? 'data-sortable-lists-selection-enabled-value="true"' : ''}
         data-sortable-lists-sortable-lists--list-outlet="#sortable-root [data-controller~='sortable-lists--list']"
         data-sortable-lists-sortable-lists--item-outlet="#sortable-root [data-controller~='sortable-lists--item']"
         data-sortable-lists-sortable-lists--scrollable-outlet="#sortable-root [data-controller~='sortable-lists--scrollable']"
@@ -141,7 +143,12 @@ describe('Sortable lists controller', () => {
     sourceList.append(itemRow('1'), itemRow('2'), itemRow('3'));
     targetList.append(itemRow('4'), itemRow('5'));
     return {
-      root, sourceList, targetList, scrollable, firstSourceItem: sourceList.querySelector<HTMLElement>('[data-sortable-lists--item-id-value="1"]')!,
+      root,
+      sourceList,
+      targetList,
+      scrollable,
+      firstSourceItem: sourceList.querySelector<HTMLElement>('[data-sortable-lists--item-id-value="1"]')!,
+      items: Array.from(root.querySelectorAll<HTMLElement>('[data-sortable-lists--item-id-value]')),
     };
   }
 
@@ -314,6 +321,24 @@ describe('Sortable lists controller', () => {
       fieldList,
       firstFieldItem: fieldList.querySelector<HTMLElement>('[data-sortable-lists--item-id-value="cf1"]')!,
     };
+  }
+
+  // Layered on renderFixture: same list/item/scrollable structure, plus the
+  // selection-enabled value on the root and tabindex on every item. The
+  // value is set at creation time, not via a later setAttribute — Stimulus
+  // picks up an attribute mutated after connect through its own (async)
+  // MutationObserver channel, which would not have run yet by the time a
+  // synchronous test dispatches its click. The tabindex mirrors Backlogs
+  // cards, which is exactly the case candidateForGesture's focusHost
+  // handling has to get right — the item itself becomes focusable and would
+  // otherwise look "interactive" to a naive descendant check.
+  function renderSelectableRoot({
+    moveUrlTemplate = '/move/{id}',
+  }:{ moveUrlTemplate?:string|null } = {}) {
+    const fixtureElements = renderFixture({ moveUrlTemplate, selectionEnabled: true });
+    fixtureElements.items.forEach((item) => item.setAttribute('tabindex', '0'));
+
+    return fixtureElements;
   }
 
   beforeEach(async () => {
@@ -1239,5 +1264,192 @@ describe('Sortable lists controller', () => {
         expect.objectContaining({ method: 'PUT' }),
       );
     });
+  const click = (element:HTMLElement, init:MouseEventInit = {}) => {
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init }));
+  };
+
+  // A gesture the root deliberately leaves alone keeps its native default, so
+  // clicking a real anchor navigates for real — or, with meta held, opens a
+  // tab — and takes the test page with it. Cancel the default in the bubble
+  // phase, after the root's capture-phase listener has already had its turn,
+  // so what the root does with the gesture is unaffected.
+  const clickWithoutNavigating = (element:HTMLElement, init:MouseEventInit = {}) => {
+    const blockNavigation = (event:Event) => event.preventDefault();
+    window.addEventListener('click', blockNavigation, { once: true });
+
+    click(element, init);
+
+    window.removeEventListener('click', blockNavigation);
+  };
+
+  const isSelected = (element:HTMLElement) => element.hasAttribute('data-batch-selected');
+
+  it('selects only the clicked card on a plain click', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+
+    click(items[0]);
+
+    expect(isSelected(items[0])).toBe(true);
+    expect(isSelected(items[1])).toBe(false);
+  });
+
+  it('lets a plain click continue to the navigation handler', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+
+    items[0].dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('lets a plain click on a non-movable card continue to navigate without selecting', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[0].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+
+    items[0].dispatchEvent(event);
+
+    expect(isSelected(items[0])).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  // A plain click always collapses the batch onto the clicked card, even
+  // when that card is not itself selectable: the card just does not join
+  // the batch. Leaving an unrelated selection behind while the click still
+  // opens this card's own details pane would be worse than an empty one.
+  it('clears an existing batch on a plain click that lands on a non-movable card', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    click(items[0]);
+    click(items[1], { metaKey: true });
+    items[2].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+
+    items[2].dispatchEvent(event);
+
+    expect(items.some(isSelected)).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('toggles a card without navigating on a meta click', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
+
+    click(items[0]);
+    items[1].dispatchEvent(event);
+
+    expect(isSelected(items[0])).toBe(true);
+    expect(isSelected(items[1])).toBe(true);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('selects a range from the anchor on a shift click', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+
+    click(items[0]);
+    click(items[2], { shiftKey: true });
+
+    expect(items.filter(isSelected)).toEqual([items[0], items[1], items[2]]);
+  });
+
+  it('keeps the anchor fixed so a range can be resized', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+
+    click(items[0]);
+    click(items[2], { shiftKey: true });
+    click(items[1], { shiftKey: true });
+
+    expect(items.filter(isSelected)).toEqual([items[0], items[1]]);
+  });
+
+  it('starts a single selection when shift is pressed without an anchor', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+
+    click(items[1], { shiftKey: true });
+
+    expect(items.filter(isSelected)).toEqual([items[1]]);
+  });
+
+  it('preserves the batch and announces when a non-movable card is meta clicked', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[1].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
+
+    click(items[0]);
+    items[1].dispatchEvent(event);
+
+    expect(items.filter(isSelected)).toEqual([items[0]]);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('ignores gestures that start on an interactive descendant', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    const link = document.createElement('a');
+    link.href = '/somewhere';
+    items[0].appendChild(link);
+
+    clickWithoutNavigating(link, { metaKey: true });
+
+    expect(items.some(isSelected)).toBe(false);
+  });
+
+  // The interactive-descendant walk must stop at the focus host, not at the
+  // item itself: a Backlogs card carries tabindex, so stopping at the item
+  // would make isInteractiveElement true for the item on iteration zero and
+  // every gesture on the card would be (wrongly) classified as interactive.
+  // This only shows up once the focus host is a distinct, nested element —
+  // the other fixtures never exercise it because their focusHost and
+  // itemElement are the same node.
+  it('selects when a gesture lands on a non-interactive descendant of a nested focus host', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    const focusHost = document.createElement('div');
+    focusHost.setAttribute('data-sortable-lists--item-target', 'focus');
+    focusHost.tabIndex = 0;
+    const label = document.createElement('span');
+    focusHost.appendChild(label);
+    items[0].appendChild(focusHost);
+
+    click(label);
+
+    expect(isSelected(items[0])).toBe(true);
+  });
+
+  // Complementary to the above: once a focus host is nested inside the item
+  // rather than being the item, it sits BELOW the item in the tree, so a
+  // gesture landing elsewhere on the row can never reach it by walking up
+  // through parentElement. Stopping at the focus host unconditionally would
+  // leave that walk unbounded, running past the item into whatever ancestors
+  // happen to be interactive. The boundary must fall back to the item
+  // element whenever the gesture did not land inside the focus host.
+  it('still selects when a gesture lands on the row outside a nested focus host', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    const focusHost = document.createElement('div');
+    focusHost.setAttribute('data-sortable-lists--item-target', 'focus');
+    focusHost.tabIndex = 0;
+    items[0].appendChild(focusHost);
+
+    click(items[0]);
+
+    expect(isSelected(items[0])).toBe(true);
+  });
+
+  it('does not select at all when selection is not enabled', async () => {
+    const { items } = renderFixture();
+    await ctx.nextFrame();
+
+    click(items[0]);
+
+    expect(items.some(isSelected)).toBe(false);
   });
 });

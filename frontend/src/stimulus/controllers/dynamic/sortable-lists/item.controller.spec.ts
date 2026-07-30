@@ -101,10 +101,12 @@ describe('Sortable lists item controller', () => {
     return {
       element,
       busy,
+      selectionEnabled: false,
       moveInDirection: vi.fn(),
       moveAvailability: vi.fn(() => null),
       ownerListElementOf: vi.fn(() => ownerListElement),
       ownerRowsContainer: vi.fn(ownerRowsContainer),
+      collapseSelectionForDrag: vi.fn(),
     };
   }
 

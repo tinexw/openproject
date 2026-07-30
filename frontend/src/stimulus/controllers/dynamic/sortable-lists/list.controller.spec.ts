@@ -74,10 +74,12 @@ describe('Sortable lists list controller', () => {
     return {
       element,
       busy,
+      selectionEnabled: false,
       moveInDirection: vi.fn(),
       moveAvailability: vi.fn(() => null),
       ownerListElementOf: vi.fn(() => null),
       ownerRowsContainer: vi.fn(() => null),
+      collapseSelectionForDrag: vi.fn(),
     };
   }
 
