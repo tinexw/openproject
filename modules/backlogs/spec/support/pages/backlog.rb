@@ -344,6 +344,43 @@ module Pages
       find(work_package_card_selector(work_package))
     end
 
+    # The row wrapper, not the card: it is what carries
+    # `data-sortable-lists--item-id-value` and, once selected,
+    # `data-batch-selected`. `aria-describedby` lives on the card instead —
+    # the card is the focus host, and an accessible description is computed
+    # from the focused element's own attribute rather than inherited from an
+    # ancestor — so a membership check on it belongs on {#work_package_card}.
+    def work_package_row(work_package)
+      find(work_package_selector(work_package))
+    end
+
+    # The row's own resolved background colour, read from the live render via
+    # `getComputedStyle`. Meant to be read twice around one isolated change,
+    # never across two different rows and never around an action that also
+    # moves focus or navigates: the row's background depends on focus and
+    # `aria-current` too, so comparing two rows, or the same row before and
+    # after a gesture that also refocuses or opens the details pane, cannot
+    # tell which of several simultaneous changes produced any observed
+    # colour difference. Hold everything but `data-batch-selected` constant
+    # (see {#focus_work_package_card} and the Space-driven scenario that
+    # uses it), or the comparison proves nothing about the selected style.
+    def row_background_color(work_package)
+      work_package_row(work_package).style("background-color").fetch("background-color")
+    end
+
+    # Moves focus onto the card without a pointer, and without touching
+    # anything a Backlogs controller reacts to: focus is not itself an event
+    # any of them listen for, so this changes `:focus-visible` state and
+    # nothing else. Used to establish focus before a background-colour
+    # control read, so a later keyboard gesture on the same card (which
+    # would otherwise focus it as a side effect of sending the key) finds
+    # focus already in place and does not change it a second time.
+    def focus_work_package_card(work_package)
+      work_package_card(work_package).execute_script(
+        "this.focus({ focusVisible: true, preventScroll: true })"
+      )
+    end
+
     # Right-clicks near the card's top-left corner: the offset keeps the
     # pointer off the subject link and the actions menu button, both of which
     # keep their native context menu on purpose.
@@ -385,6 +422,21 @@ module Pages
     def expect_work_package_card_focused(work_package)
       expect(page)
         .to have_css(work_package_card_selector(work_package), focused: true)
+    end
+
+    # The card's *computed* accessible description, resolved by the browser the
+    # way assistive technology would, rather than the raw `aria-describedby`
+    # token. An id that resolves to nothing, or a description element the
+    # browser declines to traverse into, leaves this empty while the attribute
+    # itself still reads exactly as intended.
+    def expect_work_package_card_described_as(work_package, description)
+      expect(page)
+        .to have_css(work_package_card_selector(work_package), accessible_description: description)
+    end
+
+    def expect_work_package_card_not_described(work_package)
+      expect(page)
+        .to have_css(work_package_card_selector(work_package), accessible_description: "")
     end
 
     # The presenter takes the overlay's `anchor` idref away for the duration of
@@ -538,12 +590,30 @@ module Pages
       end
     end
 
+    # Opening details morphs the row into its "current work package" state, so
+    # a reference captured before that point can go stale while the menu is
+    # still settling. A bare method-level `retry` re-runs this same sequence
+    # with no gap, which can land in the same mid-morph instant every time;
+    # `retry_block`, as `pick_up_and_release_work_package` below already
+    # uses, bounds the attempts and spaces them out, and everything inside
+    # it — the button, the menu, the resulting view — is found fresh on
+    # each attempt rather than carried over from one that went stale.
     def open_work_package_details(work_package)
-      within_work_package(work_package) do
-        button = find(:button, accessible_name: "Work package actions")
-        open_controlled_menu(button).find(:menuitem, text: I18n.t(:"js.button_open_details")).click
+      retry_block(
+        args: {
+          tries: 3,
+          on: [
+            Capybara::Cuprite::ObsoleteNode,
+            Selenium::WebDriver::Error::StaleElementReferenceError
+          ]
+        }
+      ) do
+        within_work_package(work_package) do
+          button = find(:button, accessible_name: "Work package actions")
+          open_controlled_menu(button).find(:menuitem, text: I18n.t(:"js.button_open_details")).click
+        end
+        expect_details_view(work_package)
       end
-      expect_details_view(work_package)
     end
 
     def expect_details_view(work_package)
@@ -651,6 +721,64 @@ module Pages
       within_work_package(work_package) do
         expect(page).to have_no_css(readonly_lock_selector)
       end
+    end
+
+    # An unmodified click: it both narrows the batch to this one card and
+    # opens its details pane. Offset near the top-left corner for the same
+    # reason `right_click_work_package_card` above is: the card's centre
+    # sits on the subject link or the actions menu button, either of which
+    # the selection root treats as an interactive descendant and ignores.
+    def select_card(work_package)
+      work_package_card(work_package).click(x: 6, y: 6, offset: :position)
+    end
+
+    # Ctrl/Cmd-click: toggles membership without navigating, and re-bases the
+    # selection anchor to this card even when the toggle deselects it.
+    def toggle_card(work_package)
+      modified_click(work_package, :meta)
+    end
+
+    # Shift-click: selects the contiguous range from the fixed anchor to this
+    # card without navigating. Repeated calls resize one range rather than
+    # walking it, because the anchor never moves.
+    def extend_selection_to(work_package)
+      modified_click(work_package, :shift)
+    end
+
+    # Live batch membership, in document order.
+    def selected_card_ids
+      all("[data-batch-selected]").pluck("data-sortable-lists--item-id-value")
+    end
+
+    # Present only once more than one card is selected. Its column scrolls,
+    # so this asserts presence and text, never scroll position or viewport
+    # visibility. `count: 1`: the count is supposed to render once, not once
+    # per selected card, and the plain `have_css` above would have passed
+    # either way.
+    def expect_selection_count(count)
+      expect(page).to have_css('[data-sortable-lists-target="selectionCount"]',
+                               text: I18n.t("js.backlogs.selection.count_label", count:), count: 1)
+    end
+
+    # The converse of {#expect_selection_count}. The element itself is always
+    # present in the DOM, in flow, at a fixed reserved height — only its
+    # `visibility` is toggled between zero or one selected card and more —
+    # so this relies on Capybara's default `visible: :visible` filter, which
+    # this Selenium-backed driver correctly resolves through computed style,
+    # to treat the `visibility: hidden` element as absent. Do not
+    # "robustness"-fix this to `visible: :all`: that would make the assertion
+    # pass unconditionally, since the element is never actually removed.
+    def expect_no_selection_count
+      expect(page).to have_no_css('[data-sortable-lists-target="selectionCount"]')
+    end
+
+    # The shared description every selected card's `aria-describedby` points
+    # at. Rendered once, permanently `hidden` (screen readers still reach it
+    # through the `aria-describedby` reference despite that), so `visible:
+    # :all` is required here, unlike {#expect_no_selection_count} above where
+    # the same attribute means the opposite thing.
+    def expect_selection_description_present
+      expect(page).to have_css("##{Backlogs::SelectionCountComponent::DESCRIPTION_ID}", visible: :all, count: 1)
     end
 
     def pick_up_and_release_work_package(work_package)
@@ -945,6 +1073,18 @@ module Pages
     end
 
     private
+
+    # Node::Element#click takes the held key and the same positional options
+    # as `right_click_work_package_card` above, so this needs no action
+    # chain of its own. The offset matters for the same reason it does
+    # there: the card's centre sits on the subject link or the actions menu
+    # button, and the selection root deliberately ignores a gesture that
+    # starts on either, discarding it rather than acting on it. Which
+    # interactive element (if any) ends up at dead centre differs by card
+    # content, which is why this was inconsistent rather than always broken.
+    def modified_click(work_package, key)
+      work_package_card(work_package).click(key, x: 6, y: 6, offset: :position)
+    end
 
     def within_sprint(sprint, &)
       within(sprint_selector(sprint), &)
