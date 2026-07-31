@@ -115,6 +115,14 @@ export default class SortableListsController extends Controller<HTMLElement> imp
   private monitorCleanupFn?:CleanupFn;
   private healScheduled = false;
 
+  // The count last spoken to assistive technology, so renderSelection can
+  // decide on its own whether a change is worth announcing rather than
+  // trusting each call site to remember. A plain click through the backlog
+  // replaces the selection on almost every gesture; announcing that on top
+  // of the details pane it also opens would be noise unless the number of
+  // selected cards actually moved.
+  private lastAnnouncedSelectionCount = 0;
+
   connect():void {
     this.monitorCleanupFn = monitorForElements({
       canMonitor: ({ source }) => !this.busy
@@ -182,10 +190,17 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       // disconnect: a morph can replace a row with a fresh element for the
       // same work package, and reacting to the disconnect alone would drop a
       // member that is about to come straight back.
+      // Presentation is re-synced on every morph regardless of whether prune
+      // dropped anything: a morph can strip or preserve the marker attribute
+      // independently of the model, so the DOM has to be brought back in
+      // line either way. Routing through renderSelection rather than calling
+      // applySelectionPresentation and renderSelectionCount directly means a
+      // prune that actually removes a selected member announces the new
+      // count through the same rule as every other selection change, instead
+      // of a second, easily-missed announcement path.
       if (this.selectionEnabled) {
         this.selection.prune(liveMovableIds(this.element));
-        applySelectionPresentation(this.element, this.selection.ids, this.selectionDescriptionIdValue);
-        this.renderSelectionCount();
+        this.renderSelection();
       }
     });
   };
@@ -242,7 +257,7 @@ export default class SortableListsController extends Controller<HTMLElement> imp
     }
 
     this.selection.replace(candidate.id, candidate.listKey);
-    this.renderSelection({ announce: false });
+    this.renderSelection();
   }
 
   // Availability mirrors executability: a direction is offered exactly when the
@@ -581,11 +596,10 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       // card must not be able to leave an unrelated batch selected behind it.
       if (candidate.movable) {
         this.selection.replace(candidate.id, candidate.listKey);
-        this.renderSelection({ announce: false });
+        this.renderSelection();
       } else {
-        const hadSelection = this.selection.size > 0;
         this.selection.clear();
-        this.renderSelection({ announce: hadSelection });
+        this.renderSelection();
       }
       return;
     }
@@ -822,41 +836,79 @@ export default class SortableListsController extends Controller<HTMLElement> imp
     event.preventDefault();
     this.selection.clear();
     // Only a visible selection going away is worth announcing; dropping a
-    // stale, invisible anchor alone has nothing for the user to notice.
-    this.renderSelection({ announce: hadSelection });
+    // stale, invisible anchor alone leaves the count unchanged, so
+    // renderSelection stays silent on its own.
+    this.renderSelection();
   }
 
   private extendSelectionTo(candidate:SelectionCandidate):void {
     const { anchor } = this.selection;
 
     if (!anchor) {
-      this.selection.replace(candidate.id, candidate.listKey);
+      this.renderRangeRestart(candidate);
+      return;
+    }
+
+    const range = resolveRangeIds(this.element, anchor, candidate);
+
+    if (range.ok) {
+      this.selection.range(range.ids);
       this.renderSelection();
       return;
     }
 
-    const rangeIds = resolveRangeIds(this.element, anchor, candidate);
-
-    if (rangeIds) {
-      this.selection.range(rangeIds);
-      this.renderSelection();
-    } else if (anchor.listKey === candidate.listKey) {
-      // Same list, unrepresentable span: a truncated block or an immovable
-      // card sits in the way, and the user needs to know which.
-      this.announceSelection('range_unavailable');
-    } else {
-      this.selection.replace(candidate.id, candidate.listKey);
-      this.renderSelection();
+    if (range.reason === 'crossList') {
+      this.renderRangeRestart(candidate);
+      return;
     }
+
+    // Same list, unrepresentable span: a truncated block or an immovable
+    // card sits in the way, and the user needs to know which — expanding the
+    // list can surface a truncated block, but it can never make a locked
+    // card movable, so the two reasons speak different messages.
+    this.announceSelection(range.reason === 'locked' ? 'range_blocked' : 'range_unavailable');
   }
 
-  private renderSelection({ announce: shouldAnnounce = true }:{ announce?:boolean } = {}):void {
+  // A Shift gesture asks for a range; collapsing it to a single card instead
+  // (no anchor yet to range from, or the anchor sits in a different list) is
+  // a real answer the user needs to hear even when the resulting count
+  // happens to match what was already selected. That is deliberately
+  // different from the count rule renderSelection otherwise applies
+  // everywhere else: an ordinary plain click that leaves the count unchanged
+  // stays silent because the details pane it also opens is its own
+  // feedback, but a Shift gesture that fails to form a range has no other
+  // feedback at all, so this always speaks — and never with the plain count
+  // sentence, which would not tell the user their range was not honoured.
+  private renderRangeRestart(candidate:SelectionCandidate):void {
+    this.selection.replace(candidate.id, candidate.listKey);
+    this.syncSelectionPresentation();
+    this.lastAnnouncedSelectionCount = this.selection.size;
+    this.announceSelection('range_restarted');
+  }
+
+  // The default place that decides whether a selection change is announced:
+  // every call site but renderRangeRestart's narrow exception below funnels
+  // through here rather than passing its own opinion, so a future call site
+  // cannot forget to. The rule is the count, not the gesture — a change in
+  // how many cards are selected is always announced, and a gesture that
+  // leaves the count where it was (an ordinary click replacing a one-card
+  // selection with a different one-card selection, say) stays silent, since
+  // that same click already opens the details pane.
+  private renderSelection():void {
+    this.syncSelectionPresentation();
+
+    const { size } = this.selection;
+    if (size === this.lastAnnouncedSelectionCount) {
+      return;
+    }
+
+    this.lastAnnouncedSelectionCount = size;
+    this.announceSelection(size === 0 ? 'cleared' : 'selected');
+  }
+
+  private syncSelectionPresentation():void {
     applySelectionPresentation(this.element, this.selection.ids, this.selectionDescriptionIdValue);
     this.renderSelectionCount();
-
-    if (shouldAnnounce) {
-      this.announceSelection(this.selection.size === 0 ? 'cleared' : 'selected');
-    }
   }
 
   private renderSelectionCount():void {
@@ -869,7 +921,7 @@ export default class SortableListsController extends Controller<HTMLElement> imp
     this.selectionCountTarget.hidden = size <= 1;
   }
 
-  private announceSelection(key:'selected'|'cleared'|'not_selectable'|'range_unavailable'):void {
+  private announceSelection(key:'selected'|'cleared'|'not_selectable'|'range_unavailable'|'range_blocked'|'range_restarted'):void {
     void announce(this.selectionMessage(key), { politeness: 'polite' });
   }
 

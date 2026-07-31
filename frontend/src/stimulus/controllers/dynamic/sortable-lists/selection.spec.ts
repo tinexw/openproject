@@ -125,40 +125,42 @@ describe('sortable-lists selection adapter', () => {
   it('resolves an ascending range within one list', () => {
     const anchor = { id: '1', listKey: 'sprint:7' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('2'))).toEqual(['1', '2']);
+    expect(resolveRangeIds(root, anchor, candidateFor('2'))).toEqual({ ok: true, ids: ['1', '2'] });
   });
 
   it('resolves a descending range within one list', () => {
     const anchor = { id: '2', listKey: 'sprint:7' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('1'))).toEqual(['1', '2']);
+    expect(resolveRangeIds(root, anchor, candidateFor('1'))).toEqual({ ok: true, ids: ['1', '2'] });
   });
 
   it('rejects a range that would cross a truncation marker', () => {
     const anchor = { id: '2', listKey: 'sprint:7' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('3'))).toBeNull();
+    expect(resolveRangeIds(root, anchor, candidateFor('3'))).toEqual({ ok: false, reason: 'unavailable' });
   });
 
   it('rejects a range that would cross a list boundary', () => {
     const anchor = { id: '3', listKey: 'sprint:7' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('4'))).toBeNull();
+    expect(resolveRangeIds(root, anchor, candidateFor('4'))).toEqual({ ok: false, reason: 'crossList' });
   });
 
   it('rejects a range whose anchor id was never a row in this list', () => {
     const anchor = { id: '99', listKey: 'sprint:7' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('2'))).toBeNull();
+    expect(resolveRangeIds(root, anchor, candidateFor('2'))).toEqual({ ok: false, reason: 'unavailable' });
   });
 
   // Refused, not trimmed: a non-movable card in the span makes the whole
-  // range unrepresentable, so this must stay `toBeNull()` rather than an
-  // array with the non-movable card filtered out.
+  // range unrepresentable, so this must stay a refusal rather than an array
+  // with the non-movable card filtered out. Distinct from the structural
+  // cases above: a locked card is never resolved by expanding the list, so
+  // callers need to tell the two reasons apart.
   it('refuses a range that would include a non-movable card', () => {
     const anchor = { id: '4', listKey: 'sprint:8' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('5'))).toBeNull();
+    expect(resolveRangeIds(root, anchor, candidateFor('5'))).toEqual({ ok: false, reason: 'locked' });
   });
 
   // list-dom's contract lets a row wrap its item instead of being it (see
@@ -187,7 +189,7 @@ describe('sortable-lists selection adapter', () => {
       const anchor = { id: '20', listKey: 'sprint:20' };
       const candidate = resolveCandidate(wrappingRoot, wrappedItemFor('22'))!;
 
-      expect(resolveRangeIds(wrappingRoot, anchor, candidate)).toEqual(['20', '21', '22']);
+      expect(resolveRangeIds(wrappingRoot, anchor, candidate)).toEqual({ ok: true, ids: ['20', '21', '22'] });
     } finally {
       wrappingRoot.remove();
     }
@@ -207,7 +209,7 @@ describe('sortable-lists selection adapter', () => {
     const anchor = { id: '1', listKey: 'sprint:7' };
     const candidate = resolveCandidate(root, strayItem)!;
 
-    expect(resolveRangeIds(root, anchor, candidate)).toBeNull();
+    expect(resolveRangeIds(root, anchor, candidate)).toEqual({ ok: false, reason: 'unavailable' });
   });
 
   it('applies and clears the batch presentation', () => {

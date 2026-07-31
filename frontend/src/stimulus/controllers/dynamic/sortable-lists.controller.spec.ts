@@ -378,6 +378,20 @@ describe('Sortable lists controller', () => {
               moved: '%{label} moved to position %{position} of %{total}',
               moved_to_list: '%{label} moved to %{list}, position %{position} of %{total}',
             },
+            selection: {
+              cleared: 'Selection cleared.',
+              not_selectable: 'Selection unchanged. This item cannot be selected because it cannot be moved.',
+              range_blocked: 'Selection unchanged. That range contains an item that cannot be moved.',
+              range_restarted: {
+                one: 'Could not extend the range. 1 item selected.',
+                other: 'Could not extend the range. %{count} items selected.',
+              },
+              range_unavailable: 'Selection unchanged. Expand this list to select that range.',
+              selected: {
+                one: '1 item selected.',
+                other: '%{count} items selected.',
+              },
+            },
           },
         },
       },
@@ -1280,6 +1294,26 @@ describe('Sortable lists controller', () => {
     expect(document.querySelector('[data-batch-selected]')).toBeNull();
   });
 
+  // Same reasoning as the plain-click collapse above: a drag that starts on
+  // one card out of a larger batch silently narrows the selection to that
+  // one card, and a screen-reader user needs to hear the count change.
+  it('announces the new count when a drag collapses a multi-card batch', async () => {
+    const { root, items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    const controller = ctx.application.getControllerForElementAndIdentifier(root, 'sortable-lists') as SortableListsControllerType;
+    items[0].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    items[1].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
+    items[2].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
+    announceSpy.mockClear();
+
+    controller.collapseSelectionForDrag(items[0]);
+
+    expect(items.filter((item) => item.hasAttribute('data-batch-selected'))).toEqual([items[0]]);
+    expect(announceSpy.mock.calls.map((call) => [call[0], call[1]])).toEqual([
+      ['1 item selected.', { politeness: 'polite' }],
+    ]);
+  });
+
   const click = (element:HTMLElement, init:MouseEventInit = {}) => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init }));
   };
@@ -1350,6 +1384,40 @@ describe('Sortable lists controller', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  // A screen-reader user with three cards selected must hear the batch
+  // collapse to one when an ordinary click replaces it, or they are left
+  // believing the larger batch is still selected.
+  it('announces the new count when a plain click collapses a multi-card batch', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    click(items[0]);
+    click(items[1], { metaKey: true });
+    click(items[2], { metaKey: true });
+    announceSpy.mockClear();
+
+    click(items[0]);
+
+    expect(items.filter(isSelected)).toEqual([items[0]]);
+    expect(announcedMessages()).toEqual([
+      ['1 item selected.', { politeness: 'polite' }],
+    ]);
+  });
+
+  // The same click also opens the details pane; announcing "1 selected" on
+  // every ordinary click through the backlog, where the count does not
+  // actually change, would be noise on top of that navigation.
+  it('stays silent on a plain click that does not change the selected count', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    click(items[0]);
+    announceSpy.mockClear();
+
+    click(items[1]);
+
+    expect(items.filter(isSelected)).toEqual([items[1]]);
+    expect(announceSpy).not.toHaveBeenCalled();
+  });
+
   // A modified gesture must be consumed even while a move is in flight: if it
   // fell through unconsumed to the card's own click handler, the details pane
   // would open a moment later on a click the user meant as a selection
@@ -1409,6 +1477,93 @@ describe('Sortable lists controller', () => {
     expect(items.filter(isSelected)).toEqual([items[1]]);
   });
 
+  // A Shift-click across lists cannot form a range at all, so it restarts
+  // the selection on the clicked card instead. That restart is worth
+  // announcing on its own, distinctly from the plain count sentence: the
+  // count rule alone would fall silent here whenever the prior selection
+  // was already a single card, leaving a Shift gesture with no feedback
+  // that the range the user asked for was never formed.
+  it('announces a distinct message when a cross-list Shift-click restarts the range', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    click(items[0]);
+    announceSpy.mockClear();
+
+    click(items[3], { shiftKey: true });
+
+    expect(items.filter(isSelected)).toEqual([items[3]]);
+    expect(announcedMessages()).toEqual([
+      ['Could not extend the range. 1 item selected.', { politeness: 'polite' }],
+    ]);
+  });
+
+  // Same restart, reached the other way: a stale anchor pruned after a morph
+  // (see "reconciling the batch after a morph" below) leaves a one-card
+  // selection with no anchor to range from, so the next Shift-click cannot
+  // extend a range either. The resulting count (1) matches what was already
+  // selected, which is exactly the case the plain count rule would miss.
+  it('announces a distinct message when a Shift-click restarts the range after its anchor was pruned', async () => {
+    const { root, items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    click(items[0]);
+    click(items[1], { metaKey: true });
+    items[1].remove();
+    morphRoot(root);
+    await ctx.nextFrame();
+    announceSpy.mockClear();
+
+    click(items[2], { shiftKey: true });
+
+    // items[1] was removed from the document above; a stale reference to it
+    // would still carry the attribute it had before removal, so membership
+    // is checked on the two live cards rather than filtering the whole
+    // `items` array.
+    expect(isSelected(items[0])).toBe(false);
+    expect(isSelected(items[2])).toBe(true);
+    expect(announcedMessages()).toEqual([
+      ['Could not extend the range. 1 item selected.', { politeness: 'polite' }],
+    ]);
+  });
+
+  // A truncation marker between the anchor and the candidate is the one
+  // reason expanding the list can actually resolve, so it keeps the existing
+  // wording.
+  it('tells the user to expand the list when a range crosses a truncation marker', async () => {
+    const { sourceList, items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    const marker = document.createElement('li');
+    marker.setAttribute('data-sortable-lists-prev-item-id', '1');
+    marker.setAttribute('data-sortable-lists-omitted-count', '9');
+    sourceList.insertBefore(marker, items[1]);
+
+    click(items[0]);
+    announceSpy.mockClear();
+    click(items[2], { shiftKey: true });
+
+    expect(items.filter(isSelected)).toEqual([items[0]]);
+    expect(announcedMessages()).toEqual([
+      ['Selection unchanged. Expand this list to select that range.', { politeness: 'polite' }],
+    ]);
+  });
+
+  // A non-movable card in the span is never resolved by expanding the list,
+  // so it must not get told to expand: the message has to name the actual
+  // blocker instead.
+  it('tells the user a locked card blocks the range rather than to expand the list', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    items[1].setAttribute('data-sortable-lists--item-movable-value', 'false');
+
+    click(items[0]);
+    announceSpy.mockClear();
+    click(items[2], { shiftKey: true });
+
+    expect(items.filter(isSelected)).toEqual([items[0]]);
+    expect(announcedMessages()).toEqual([
+      ['Selection unchanged. That range contains an item that cannot be moved.', { politeness: 'polite' }],
+    ]);
+  });
+
   it('preserves the batch and announces when a non-movable card is meta clicked', async () => {
     const { items } = renderSelectableRoot();
     await ctx.nextFrame();
@@ -1416,10 +1571,14 @@ describe('Sortable lists controller', () => {
     const event = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
 
     click(items[0]);
+    announceSpy.mockClear();
     items[1].dispatchEvent(event);
 
     expect(items.filter(isSelected)).toEqual([items[0]]);
     expect(event.defaultPrevented).toBe(true);
+    expect(announcedMessages()).toEqual([
+      ['Selection unchanged. This item cannot be selected because it cannot be moved.', { politeness: 'polite' }],
+    ]);
   });
 
   it('ignores gestures that start on an interactive descendant', async () => {
@@ -1818,6 +1977,47 @@ describe('Sortable lists controller', () => {
       await ctx.nextFrame();
 
       expect(isSelected(items[2])).toBe(false);
+    });
+
+    // A morph can remove a selected card's row entirely (the underlying work
+    // package left the list server-side); the batch shrinks, and a
+    // screen-reader user needs to hear the new count exactly as they would
+    // for any other selection change.
+    it('announces the new count when a morph prune removes a selected card', async () => {
+      const { root, items } = renderSelectableRoot();
+      await ctx.nextFrame();
+      click(items[0]);
+      click(items[1], { metaKey: true });
+      click(items[2], { metaKey: true });
+      items[1].remove();
+      announceSpy.mockClear();
+
+      morphRoot(root);
+      await ctx.nextFrame();
+
+      expect(announcedMessages()).toEqual([
+        ['2 items selected.', { politeness: 'polite' }],
+      ]);
+    });
+
+    // A morph that changes nothing selection-relevant (the common case) must
+    // not speak at all. renderSelection is called unconditionally on every
+    // morph (see scheduleRegistrationHeal) and decides purely from the
+    // count: every mutator already leaves lastAnnouncedSelectionCount equal
+    // to the live size at rest, so a prune that drops nothing leaves the
+    // count exactly where renderSelection last announced it, and it stays
+    // silent on its own — prune's own boolean return plays no part in that.
+    it('stays silent when a morph prunes nothing', async () => {
+      const { root, items } = renderSelectableRoot();
+      await ctx.nextFrame();
+      click(items[0]);
+      click(items[1], { metaKey: true });
+      announceSpy.mockClear();
+
+      morphRoot(root);
+      await ctx.nextFrame();
+
+      expect(announceSpy).not.toHaveBeenCalled();
     });
 
     // A morph that removes a selected card's row has to drop it from the

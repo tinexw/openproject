@@ -151,9 +151,23 @@ export function liveMovableIds(root:HTMLElement):Set<string> {
   return ids;
 }
 
+// Why a range could not be resolved. `crossList` covers the anchor and
+// candidate living in different lists, where "between these two cards" has
+// no meaning. `unavailable` covers every other structural reason the span
+// cannot be walked — most commonly a truncation marker inside it, but also
+// the defensive cases where a row cannot be found at all — and is the one
+// remediable by expanding the list. `locked` is the one that is not: a card
+// the user may not move sits in the span, and no amount of expanding the
+// list changes that.
+export type RangeUnavailableReason = 'crossList'|'unavailable'|'locked';
+
+export type RangeResolution =
+  | { ok:true; ids:string[] }
+  | { ok:false; reason:RangeUnavailableReason };
+
 /**
- * The contiguous, movable range between the anchor and the candidate, or null
- * when the range cannot be expressed.
+ * The contiguous, movable range between the anchor and the candidate, or a
+ * reason the range cannot be expressed.
  *
  * A range is refused rather than trimmed when it would cross a list boundary,
  * a truncation marker, or a card the user may not move: silently selecting
@@ -163,14 +177,14 @@ export function resolveRangeIds(
   root:HTMLElement,
   anchor:SelectionAnchor,
   candidate:SelectionCandidate,
-):string[]|null {
+):RangeResolution {
   if (anchor.listKey !== candidate.listKey) {
-    return null;
+    return { ok: false, reason: 'crossList' };
   }
 
   const list = ownerList(root, candidate.itemElement);
   if (!list) {
-    return null;
+    return { ok: false, reason: 'unavailable' };
   }
 
   const rowsContainer = listRowsContainer(list);
@@ -181,7 +195,7 @@ export function resolveRangeIds(
   // container (nested in some other part of the list) has no row here.
   const candidateRow = rowOf(rowsContainer, candidate.itemElement);
   if (!anchorRow || !candidateRow) {
-    return null;
+    return { ok: false, reason: 'unavailable' };
   }
 
   const from = rows.indexOf(anchorRow);
@@ -192,16 +206,22 @@ export function resolveRangeIds(
   for (const row of span) {
     const item = resolveItemElement(row);
     const id = item ? resolveItemId(item) : null;
-    // A structural row inside the span is a hard boundary, and so is a card
-    // the user cannot move: both make the gestured range unrepresentable.
-    if (!item || !id || !isMovableItem(item)) {
-      return null;
+    // A structural row inside the span (a truncation marker) is a hard
+    // boundary, and so is a card the user cannot move — but the two are not
+    // interchangeable to the user, who can resolve the first by expanding the
+    // list and can never resolve the second at all.
+    if (!item || !id) {
+      return { ok: false, reason: 'unavailable' };
+    }
+
+    if (!isMovableItem(item)) {
+      return { ok: false, reason: 'locked' };
     }
 
     ids.push(id);
   }
 
-  return ids;
+  return { ok: true, ids };
 }
 
 /**

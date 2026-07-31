@@ -102,7 +102,13 @@ export class BatchSelection {
   /**
    * Drops members and an anchor that no longer exist in the document.
    *
-   * @return whether anything changed, so the caller can skip re-rendering.
+   * @return whether membership or the anchor changed — a convenience for a
+   *   caller that wants to skip redundant work when nothing did. The
+   *   current caller (SortableListsController's morph heal) does not use it
+   *   that way: it has to resync DOM presentation after every morph
+   *   regardless of whether the model changed, so it discards this value
+   *   and re-renders unconditionally. The signal is kept for a future
+   *   caller that can actually act on it.
    */
   prune(liveIds:ReadonlySet<string>):boolean {
     let changed = false;

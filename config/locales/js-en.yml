@@ -870,6 +870,10 @@ en:
       selection:
         cleared: "Selection cleared."
         not_selectable: "Selection unchanged. This item cannot be selected because it cannot be moved."
+        range_blocked: "Selection unchanged. That range contains an item that cannot be moved."
+        range_restarted:
+          one: "Could not extend the range. 1 item selected."
+          other: "Could not extend the range. %{count} items selected."
         range_unavailable: "Selection unchanged. Expand this list to select that range."
         selected:
           one: "1 item selected."
