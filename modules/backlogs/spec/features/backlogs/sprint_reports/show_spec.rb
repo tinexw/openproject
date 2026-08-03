@@ -42,6 +42,7 @@ RSpec.describe "Sprint report page", :js, with_flag: :sprint_reports do
            finish_date: Date.tomorrow,
            status: :active)
   end
+  shared_let(:sprint_goal) { create(:sprint_goal, sprint:, project:, text: "Add sprint goal widget") }
 
   let(:permissions) { %i[view_sprints view_work_packages show_board_views] }
 
@@ -73,8 +74,14 @@ RSpec.describe "Sprint report page", :js, with_flag: :sprint_reports do
   describe "widget area" do
     before { visit_sprint_report }
 
-    it "renders the burndown chart widget" do
-      expect(page).to have_element(:"opce-burndown-chart")
+    it "renders the sprint goal widget" do
+      within(".widget-box:nth-of-type(1)") do
+        expect(page).to have_text("Add sprint goal widget")
+      end
+    end
+
+    it "renders the burndown chart widget second" do
+      expect(page).to have_css(".widget-box:nth-of-type(2) opce-burndown-chart")
     end
   end
 end
