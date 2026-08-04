@@ -39,6 +39,7 @@ import {
   openProjectWorkPackageBlockSpec,
   openProjectWorkPackageInlineSpec,
   workPackageSlashMenu,
+  createWorkPackageSlashMenu,
   useHashWpMenu,
 } from 'op-blocknote-extensions';
 import { useCallback, useEffect, useMemo } from 'react';
@@ -132,6 +133,7 @@ export function OpBlockNoteEditor({
   const getCustomSlashMenuItems = useCallback((editorInstance:EditorType) => [
     ...getDefaultReactSlashMenuItems(editorInstance),
     workPackageSlashMenu(editorInstance),
+    createWorkPackageSlashMenu(editorInstance),
   ], []);
   const { getHashItems, HashWpMenu } = useHashWpMenu(editor);
 
