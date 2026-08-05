@@ -168,11 +168,10 @@ RSpec.describe "Backlogs::Backlog", :skip_csrf, type: :rails_request do
           expect(response).to have_http_status(:ok)
           # The inbox itself is filtered out...
           expect(response.body).not_to include(%(id="inbox_project_#{project.id}"))
-          # ...but the count region and shared description survive regardless,
-          # because selection must stay visible and describable for whichever
-          # lists remain on screen.
-          expect(response.body).to include('data-sortable-lists-target="selectionCount"')
-          expect(response.body).to include(%(id="#{Backlogs::SelectionCountComponent::DESCRIPTION_ID}"))
+          # ...but the shared description survives regardless, because
+          # selection must stay describable for whichever lists remain on
+          # screen.
+          expect(response.body).to include(%(id="#{Backlogs::SelectionDescriptionComponent::DESCRIPTION_ID}"))
         end
       end
     end

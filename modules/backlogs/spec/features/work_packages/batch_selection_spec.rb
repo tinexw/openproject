@@ -73,8 +73,7 @@ RSpec.describe "Backlogs batch selection", :js, :selenium, :settings_reset do
   end
 
   describe "mouse gestures" do
-    it "collapses a wider selection onto the clicked card, still opens its details, " \
-       "and hides the count again" do
+    it "collapses a wider selection onto the clicked card and still opens its details" do
       backlogs_page.select_card(story1)
       backlogs_page.toggle_card(story2)
       backlogs_page.select_card(story3)
@@ -82,7 +81,6 @@ RSpec.describe "Backlogs batch selection", :js, :selenium, :settings_reset do
       expect(page).to have_css("[data-batch-selected]", count: 1)
       expect(backlogs_page.selected_card_ids).to eq([story3.id.to_s])
       backlogs_page.expect_details_view(story3)
-      backlogs_page.expect_no_selection_count
     end
 
     it "toggles a sparse selection across two lists without navigating" do
@@ -97,7 +95,6 @@ RSpec.describe "Backlogs batch selection", :js, :selenium, :settings_reset do
 
       expect(page).to have_css("[data-batch-selected]", count: 2)
       expect(backlogs_page.selected_card_ids).to contain_exactly(story1.id.to_s, bucket_wp1.id.to_s)
-      backlogs_page.expect_selection_count(2)
       # The modified click must never reach the card's own click handler: if it
       # did, the details pane would have opened and the path would have changed.
       expect(page).to have_current_path(backlogs_page.path, ignore_query: true)

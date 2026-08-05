@@ -27,29 +27,9 @@ See COPYRIGHT and LICENSE files for more details.
 
 ++%>
 
-<%=
-  render(
-    Primer::Box.new(
-      tag: :p,
-      mb: 2,
-      color: :muted,
-      font_size: :small,
-      data: { sortable_lists_target: "selectionCount" },
-      # Off, not merely the browser default: the root already announces
-      # selection changes through the shared Primer live region, so this
-      # region must stay silent or every change would announce twice.
-      aria: { live: :off },
-      # Stays in the layout at all times (no `hidden`/`display: none`): the
-      # stylesheet reserves this element's line height unconditionally, and
-      # `--empty` only ever toggles `visibility`, so a count appearing or
-      # disappearing never pushes the planning columns below it up or down.
-      # The controller flips the same class on selection change; this is
-      # only the empty-until-JS-runs starting state.
-      classes: "op-backlogs-selection-count op-backlogs-selection-count--empty"
-    )
-  )
-%>
-
+<%# Permanently hidden: `aria-describedby` reaches it regardless, and keeping
+    it out of the visual flow is what leaves the planning columns' geometry
+    untouched. %>
 <%= render(Primer::Box.new(tag: :span, id: DESCRIPTION_ID, hidden: true)) do %>
   <%= I18n.t("js.backlogs.selection.card_state") %>
 <% end %>

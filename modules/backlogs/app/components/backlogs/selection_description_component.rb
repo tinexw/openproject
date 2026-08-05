@@ -29,14 +29,14 @@
 #++
 
 module Backlogs
-  # Persistent visible count of the current batch selection, plus the single
-  # description that every selected card points at.
+  # The single description that every selected card points at through
+  # `aria-describedby`, so batch membership reaches assistive technology per
+  # card without duplicating the string onto every one of them.
   #
-  # Neither carries server-rendered state: the count is client state and would
-  # be stale the moment the next card is selected, and the description is one
-  # shared element so membership reaches assistive technology per card without
-  # duplicating a string onto every card.
-  class SelectionCountComponent < ApplicationComponent
+  # It carries no server-rendered state: selection is client state and would be
+  # stale the moment the next card is selected. The element is permanently
+  # hidden, which is also why it costs the planning columns no layout space.
+  class SelectionDescriptionComponent < ApplicationComponent
     DESCRIPTION_ID = "op-backlogs-batch-selected-description"
   end
 end
