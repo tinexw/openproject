@@ -87,9 +87,11 @@ function listRowsContainer(list:HTMLElement):HTMLElement {
 }
 
 // The id of the item a row holds, whether the row is the item element or
-// merely contains it.
-function rowItemId(row:Element):string|null {
-  const item = resolveItemElement(row);
+// merely contains it. Bounded by the rows container: resolveItemElement's
+// querySelector fallback descends unbounded, so a section row would otherwise
+// resolve to the first field of the list nested inside it.
+function rowItemId(row:Element, rowsContainer:Element):string|null {
+  const item = resolveItemElement(row, rowsContainer);
 
   return item ? resolveItemId(item) : null;
 }
@@ -189,7 +191,7 @@ export function resolveRangeIds(
 
   const rowsContainer = listRowsContainer(list);
   const rows = Array.from(rowsContainer.children);
-  const anchorRow = rows.find((row) => rowItemId(row) === anchor.id);
+  const anchorRow = rows.find((row) => rowItemId(row, rowsContainer) === anchor.id);
   // Meaningful only because rowsContainer came from the list rather than from
   // the candidate's own parent: a candidate whose item sits outside the rows
   // container (nested in some other part of the list) has no row here.
@@ -204,7 +206,7 @@ export function resolveRangeIds(
 
   const ids:string[] = [];
   for (const row of span) {
-    const item = resolveItemElement(row);
+    const item = resolveItemElement(row, rowsContainer);
     const id = item ? resolveItemId(item) : null;
     // A structural row inside the span (a truncation marker) is a hard
     // boundary, and so is a card the user cannot move — but the two are not
