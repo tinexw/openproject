@@ -28,12 +28,23 @@
 
 import { LiveRegionElement } from '@primer/live-region-element';
 import { type MockInstance } from 'vitest';
-import { SelectionOrchestrator, type SelectionHost } from './selection-orchestrator';
-import { batchSelectedAttribute } from './selection';
+import type { SelectionHost } from './selection-orchestrator';
 
 // No Stimulus application, no outlets, no controller lifecycle: the whole
 // point of the host port is that selection can be driven over a plain DOM.
 describe('SelectionOrchestrator', () => {
+  // Imported dynamically, after the mock above registers: spec files share
+  // one module registry (the runner does not isolate them), so a static
+  // import here would bind whatever another spec already pulled in — with
+  // the real platform helper baked in.
+  let SelectionOrchestrator:typeof import('./selection-orchestrator').SelectionOrchestrator;
+  let batchSelectedAttribute:string;
+
+  beforeAll(async () => {
+    ({ SelectionOrchestrator } = await import('./selection-orchestrator'));
+    ({ batchSelectedAttribute } = await import('./selection'));
+  });
+
   let root:HTMLElement;
   let announceSpy:MockInstance<typeof LiveRegionElement.prototype.announce>;
   let busy = false;
@@ -67,6 +78,9 @@ describe('SelectionOrchestrator', () => {
     `;
     document.body.append(root, document.createElement('live-region'));
     announceSpy = vi.spyOn(LiveRegionElement.prototype, 'announce');
+    // The real platform helper runs; only the signal it reads is stubbed, so
+    // these cases cover the helper's own parsing too.
+    pretendPlatform('Windows');
     window.I18n.store({
       en: {
         js: {
@@ -88,8 +102,17 @@ describe('SelectionOrchestrator', () => {
   afterEach(() => {
     root.remove();
     document.querySelector('live-region')?.remove();
-    vi.restoreAllMocks();
+    announceSpy.mockRestore();
   });
+
+  // navigator.platform and userAgentData are read-only accessors, so the
+  // stub is installed per test and torn down with the fixture.
+  function pretendPlatform(platform:string):void {
+    Object.defineProperty(navigator, 'userAgentData', {
+      value: { platform },
+      configurable: true,
+    });
+  }
 
   const item = (id:string) => root.querySelector<HTMLElement>(`[data-sortable-lists--item-id-value="${id}"]`)!;
   const isSelected = (element:HTMLElement) => element.hasAttribute(batchSelectedAttribute);
@@ -222,6 +245,87 @@ describe('SelectionOrchestrator', () => {
       orchestrator.handleClick(clickOn(item('2')));
 
       expect(spoken()).toEqual(['1 item selected.']);
+    });
+  });
+
+  describe('keyboard and pointer edge cases', () => {
+    const keydownOn = (element:HTMLElement, key:string, init:KeyboardEventInit = {}) => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+      Object.defineProperty(event, 'target', { value: element });
+      return event;
+    };
+
+    // Consuming the key with nothing to select is a black hole: nothing
+    // selected, nothing announced, and the browser's own select-all blocked.
+    it('leaves Ctrl/Cmd+A alone when nothing is selectable', () => {
+      root.querySelectorAll('[data-sortable-lists--item-id-value]')
+        .forEach((el) => el.setAttribute('data-sortable-lists--item-mobility-value', 'fixed'));
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      const event = keydownOn(item('1'), 'a', { metaKey: true });
+
+      orchestrator.handleKeydown(event);
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(orchestrator.selectedIds()).toEqual([]);
+    });
+
+    it('still consumes Ctrl/Cmd+A when there is something to select', () => {
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      const event = keydownOn(item('1'), 'a', { metaKey: true });
+
+      orchestrator.handleKeydown(event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(orchestrator.selectedIds()).toEqual(['1', '2', '3']);
+    });
+
+    // Holding Space would otherwise toggle the card over and over, with a
+    // contradictory announcement for each flip.
+    it('ignores a repeated Space keydown', () => {
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      orchestrator.handleKeydown(keydownOn(item('1'), ' '));
+
+      orchestrator.handleKeydown(keydownOn(item('1'), ' ', { repeat: true }));
+
+      expect(orchestrator.selectedIds()).toEqual(['1']);
+    });
+
+    // Every other entry point refuses a fixed card; this one skipped the
+    // check and could paint a card the rest of the UI insists is unselectable.
+    it('refuses to extend a range onto a fixed card', () => {
+      item('2').setAttribute('data-sortable-lists--item-mobility-value', 'fixed');
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+
+      orchestrator.handleKeydown(keydownOn(item('1'), 'ArrowDown', { shiftKey: true }));
+
+      expect(isSelected(item('2'))).toBe(false);
+      expect(orchestrator.selectedIds()).toEqual([]);
+    });
+
+    // Ctrl-click is the secondary click on Apple platforms, opening the
+    // card's contextual menu. It must not toggle — and must not fall through
+    // to the ordinary-click path either, which would replace the batch.
+    it('ignores Ctrl-click entirely on Apple platforms', () => {
+      pretendPlatform('macOS');
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      orchestrator.handleClick(clickOn(item('1')));
+
+      const event = clickOn(item('2'), { ctrlKey: true });
+      orchestrator.handleClick(event);
+
+      expect(orchestrator.selectedIds()).toEqual(['1']);
+      expect(isSelected(item('2'))).toBe(false);
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    it('still treats Ctrl-click as multi-select elsewhere', () => {
+      pretendPlatform('Windows');
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      orchestrator.handleClick(clickOn(item('1')));
+
+      orchestrator.handleClick(clickOn(item('2'), { ctrlKey: true }));
+
+      expect(orchestrator.selectedIds()).toEqual(['1', '2']);
     });
   });
 

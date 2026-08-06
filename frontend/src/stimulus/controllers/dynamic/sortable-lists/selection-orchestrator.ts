@@ -40,6 +40,7 @@ import {
   type SelectionCandidate,
 } from './selection';
 import { closestInteractiveElement } from 'core-common/interactive-element-helper';
+import { isApplePlatform } from 'core-stimulus/helpers/platform';
 
 /**
  * What the orchestrator needs from whatever hosts it.
@@ -109,7 +110,17 @@ export class SelectionOrchestrator {
   }
 
   readonly handleClick = (event:MouseEvent):void => {
-    const modified = event.shiftKey || event.metaKey || event.ctrlKey;
+    // Ctrl-click is the secondary click on Apple platforms, where it opens
+    // the card's contextual menu and Cmd is the multi-select key instead.
+    // Returning before classification matters: merely treating it as
+    // unmodified would send it down the ordinary-click path, which replaces
+    // the batch with this card — the opposite of leaving the gesture alone.
+    if (event.ctrlKey && !event.metaKey && !event.shiftKey && isApplePlatform()) {
+      return;
+    }
+
+    const multiSelect = event.metaKey || event.ctrlKey;
+    const modified = event.shiftKey || multiSelect;
     const candidate = this.candidateForGesture(event.target);
     if (!candidate) {
       return;
@@ -228,6 +239,12 @@ export class SelectionOrchestrator {
   private handleSpace(event:KeyboardEvent, candidate:SelectionCandidate):void {
     event.preventDefault();
 
+    // A held Space would otherwise toggle the card over and over, with a
+    // contradictory announcement for each flip.
+    if (event.repeat) {
+      return;
+    }
+
     if (this.host.busy) {
       return;
     }
@@ -300,8 +317,16 @@ export class SelectionOrchestrator {
     }
 
     const candidate = resolveCandidate(this.host.rootElement, target);
-    if (candidate) {
+    if (!candidate) {
+      return;
+    }
+
+    // The one entry point that used to skip this, so a Shift+Arrow could
+    // paint a card every other gesture refuses.
+    if (candidate.orderable) {
       this.extendSelectionTo(candidate);
+    } else {
+      this.announceSelection('not_selectable');
     }
   }
 
@@ -320,13 +345,20 @@ export class SelectionOrchestrator {
       return;
     }
 
+    const ids = [...liveOrderableIds(this.host.rootElement)];
+    // Consumed only once there is something to select. Swallowing the key on
+    // a page with nothing selectable would block the browser's own
+    // select-all and announce nothing in its place.
+    if (ids.length === 0) {
+      return;
+    }
+
     event.preventDefault();
 
     if (this.host.busy) {
       return;
     }
 
-    const ids = [...liveOrderableIds(this.host.rootElement)];
     const anchor:SelectionAnchor|null = candidate.orderable
       ? { id: candidate.id, listKey: candidate.listKey }
       : this.firstOrderableCandidate();
