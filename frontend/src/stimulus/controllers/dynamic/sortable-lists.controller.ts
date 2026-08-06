@@ -33,8 +33,6 @@ import {
 import { Controller } from '@hotwired/stimulus';
 import { FetchRequest } from '@rails/request.js';
 import { announce } from '@primer/live-region-element';
-import { BatchSelection, type SelectionAnchor } from 'core-common/batch-selection';
-import { closestInteractiveElement } from 'core-common/interactive-element-helper';
 import { debugLog } from 'core-app/shared/helpers/debug_output';
 import { OPToastEvent } from 'core-app/shared/components/toaster/toast-event';
 import { flipMove } from 'core-stimulus/helpers/flip-helper';
@@ -64,24 +62,14 @@ import {
   type MoveAvailability,
   type MoveDirection,
 } from './sortable-lists/list-dom';
-import {
-  applySelectionPresentation,
-  listBoundaryItem,
-  liveOrderableIds,
-  neighbourItem,
-  orderedItemElements,
-  orderedSelectedIds,
-  resolveCandidate,
-  resolveRangeIds,
-  type SelectionCandidate,
-} from './sortable-lists/selection';
+import { SelectionOrchestrator, type SelectionHost } from './sortable-lists/selection-orchestrator';
 
 type CleanupFn = () => void;
 type ElementDropPayload = ElementEventPayloadMap['onDrop'];
 type MoveResult = { ok:true }|{ ok:false; showToast:boolean };
 interface MoveAnnouncementContext { label:string|null; listName:string|null; crossList:boolean }
 
-export default class SortableListsController extends Controller<HTMLElement> implements SortableListsRoot {
+export default class SortableListsController extends Controller<HTMLElement> implements SortableListsRoot, SelectionHost {
   static outlets = ['sortable-lists--list', 'sortable-lists--item', 'sortable-lists--scrollable'];
 
   static values = {
@@ -106,18 +94,11 @@ export default class SortableListsController extends Controller<HTMLElement> imp
   declare readonly announcementScopeValue:string;
   declare readonly selectionDescriptionIdValue:string;
 
-  private readonly selection = new BatchSelection();
+  private selection?:SelectionOrchestrator;
 
   private monitorCleanupFn?:CleanupFn;
   private healScheduled = false;
 
-  // The count last spoken to assistive technology, so renderSelection can
-  // decide on its own whether a change is worth announcing rather than
-  // trusting each call site to remember. A plain click through the backlog
-  // replaces the selection on almost every gesture; announcing that on top
-  // of the details pane it also opens would be noise unless the number of
-  // selected cards actually moved.
-  private lastAnnouncedSelectionCount = 0;
 
   connect():void {
     this.monitorCleanupFn = monitorForElements({
@@ -129,11 +110,20 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       },
     });
     this.element.addEventListener('turbo:morph-element', this.scheduleRegistrationHeal);
-    // Capture phase, at the root: a modified gesture has to be consumed before
-    // the card's own navigation listener sees it, and doing that here does not
-    // depend on which controller connected first.
-    this.element.addEventListener('click', this.onSelectionClick, true);
-    this.element.addEventListener('keydown', this.onSelectionKeydown, true);
+
+    // Constructed only for a consumer that opted in, and the listeners go up
+    // with it. A root that never opted in therefore has nothing attached to
+    // swallow a keystroke with, rather than attaching handlers that return
+    // early — the difference matters for a viewer, whose Space and arrows
+    // must keep scrolling the page.
+    if (this.selectionEnabledValue) {
+      this.selection = new SelectionOrchestrator(this);
+      // Capture phase, at the root: a modified gesture has to be consumed
+      // before the card's own navigation listener sees it, and doing that
+      // here does not depend on which controller connected first.
+      this.element.addEventListener('click', this.onSelectionClick, true);
+      this.element.addEventListener('keydown', this.onSelectionKeydown, true);
+    }
   }
 
   disconnect():void {
@@ -142,6 +132,51 @@ export default class SortableListsController extends Controller<HTMLElement> imp
     this.element.removeEventListener('keydown', this.onSelectionKeydown, true);
     this.monitorCleanupFn?.();
     this.monitorCleanupFn = undefined;
+    this.selection?.teardown();
+    this.selection = undefined;
+  }
+
+  private readonly onSelectionClick = (event:MouseEvent):void => {
+    this.selection?.handleClick(event);
+  };
+
+  private readonly onSelectionKeydown = (event:KeyboardEvent):void => {
+    this.selection?.handleKeydown(event);
+  };
+
+  // SelectionHost. The orchestrator reads root state and asks for focus; it
+  // never learns that any of this is Stimulus.
+  get rootElement():HTMLElement {
+    return this.element;
+  }
+
+  get announcementScope():string {
+    return this.announcementScopeValue;
+  }
+
+  get descriptionId():string {
+    return this.selectionDescriptionIdValue;
+  }
+
+  // Focus is applied through the item's own outlet so the consumer decides
+  // which element inside the row actually holds the tab stop.
+  focusItem(target:HTMLElement):void {
+    const outlet = this.sortableListsItemOutlets.find((item) => item.element === target);
+
+    if (outlet) {
+      outlet.focusItem();
+    } else {
+      target.focus();
+    }
+  }
+
+  // Live ordered membership, for AGILE-278's batch move.
+  selectedIds():string[] {
+    return this.selection?.selectedIds() ?? [];
+  }
+
+  collapseSelectionForDrag(itemElement:HTMLElement):void {
+    this.selection?.collapseForDrag(itemElement);
   }
 
   // A morph desyncs the children's drag-and-drop state in two ways. Stimulus
@@ -194,10 +229,7 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       // prune that actually removes a selected member announces the new
       // count through the same rule as every other selection change, instead
       // of a second, easily-missed announcement path.
-      if (this.selectionEnabled) {
-        this.selection.prune(liveOrderableIds(this.element));
-        this.renderSelection();
-      }
+      this.selection?.reconcile();
     });
   };
 
@@ -227,33 +259,6 @@ export default class SortableListsController extends Controller<HTMLElement> imp
 
   get busy():boolean {
     return this.element.hasAttribute(sortableListsBusyAttribute);
-  }
-
-  get selectionEnabled():boolean {
-    return this.selectionEnabledValue;
-  }
-
-  // Live ordered membership, for AGILE-278's batch move.
-  selectedIds():string[] {
-    return orderedSelectedIds(this.element, this.selection.ids);
-  }
-
-  collapseSelectionForDrag(itemElement:HTMLElement):void {
-    // Collapsing a wider selection onto the dragged card and selecting the
-    // dragged card are different things; only the first is in scope here.
-    // With nothing selected there is nothing to collapse, so a drag must not
-    // manufacture a one-card batch the user never asked for.
-    if (!this.selectionEnabled || this.selection.size === 0) {
-      return;
-    }
-
-    const candidate = resolveCandidate(this.element, itemElement);
-    if (!candidate?.orderable) {
-      return;
-    }
-
-    this.selection.replace(candidate.id, candidate.listKey);
-    this.renderSelection();
   }
 
   // Availability mirrors executability: a direction is offered exactly when the
@@ -569,350 +574,4 @@ export default class SortableListsController extends Controller<HTMLElement> imp
     void announce(message, { politeness: 'assertive' });
   }
 
-  private readonly onSelectionClick = (event:MouseEvent):void => {
-    if (!this.selectionEnabled) {
-      return;
-    }
-
-    const modified = event.shiftKey || event.metaKey || event.ctrlKey;
-    const candidate = this.candidateForGesture(event.target);
-    if (!candidate) {
-      return;
-    }
-
-    if (!modified) {
-      if (this.busy) {
-        return;
-      }
-
-      // An ordinary click deliberately collapses the batch onto the clicked
-      // card and is then allowed through, so the details pane still opens.
-      // That collapse applies whether or not the card itself is selectable:
-      // the card only joins the batch when it is orderable, but a fixed
-      // card must not be able to leave an unrelated batch selected behind it.
-      if (candidate.orderable) {
-        this.selection.replace(candidate.id, candidate.listKey);
-        this.renderSelection();
-      } else {
-        this.selection.clear();
-        this.renderSelection();
-      }
-      return;
-    }
-
-    // Consumed here regardless of `busy`: letting a modified gesture fall
-    // through to the card's own click handler while a move is in flight
-    // would open the details pane on a click the user meant as a selection
-    // toggle, as an unrequested navigation once the card's own click delay
-    // elapses.
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (this.busy) {
-      return;
-    }
-
-    if (!candidate.orderable) {
-      this.announceSelection('not_selectable');
-      return;
-    }
-
-    if (event.shiftKey) {
-      this.extendSelectionTo(candidate);
-    } else {
-      this.selection.toggle(candidate.id, candidate.listKey);
-      this.renderSelection();
-    }
-  };
-
-  // Interactive descendants keep their own behaviour: a link inside a card is
-  // a link first, and a selection gesture never steals it. The walk stops at
-  // the focus host rather than the row when the gesture landed inside it,
-  // because the host is itself allowed to be focusable — Backlogs cards
-  // carry tabindex — and would otherwise disqualify every gesture that
-  // landed on the card at all. But no consumer today renders a focus host
-  // nested inside the item rather than being the item itself; once one does,
-  // a gesture landing elsewhere on the row (outside the host's own subtree)
-  // could never reach it by walking up through parentElement, and the walk
-  // would run past the item into unrelated ancestors instead of stopping.
-  // Falling back to the item element for that case keeps the walk bounded
-  // to the row either way.
-  private candidateForGesture(target:EventTarget|null):SelectionCandidate|null {
-    const candidate = resolveCandidate(this.element, target);
-    if (!candidate) {
-      return null;
-    }
-
-    if (!(target instanceof Element)) {
-      return candidate;
-    }
-
-    const boundary = candidate.focusHost.contains(target) ? candidate.focusHost : candidate.itemElement;
-    const interactive = closestInteractiveElement(target, boundary);
-
-    return interactive ? null : candidate;
-  }
-
-  private readonly onSelectionKeydown = (event:KeyboardEvent):void => {
-    if (!this.selectionEnabled) {
-      return;
-    }
-
-    const candidate = this.candidateForGesture(event.target);
-    if (!candidate) {
-      return;
-    }
-
-    switch (event.key) {
-      case ' ':
-        this.handleSpace(event, candidate);
-        break;
-      case 'ArrowDown':
-      case 'ArrowUp':
-        this.handleArrow(event, candidate, event.key === 'ArrowDown' ? 1 : -1);
-        break;
-      case 'Home':
-      case 'End':
-        this.handleBoundary(event, candidate, event.key === 'Home' ? 'first' : 'last');
-        break;
-      case 'a':
-      case 'A':
-        this.handleSelectAll(event, candidate);
-        break;
-      case 'Escape':
-        this.handleEscape(event);
-        break;
-      default:
-        // Enter and Shift+Enter belong to the card's own activation handler.
-        break;
-    }
-  };
-
-  private handleSpace(event:KeyboardEvent, candidate:SelectionCandidate):void {
-    event.preventDefault();
-
-    if (this.busy) {
-      return;
-    }
-
-    if (!candidate.orderable) {
-      this.announceSelection('not_selectable');
-      return;
-    }
-
-    if (event.shiftKey) {
-      this.extendSelectionTo(candidate);
-    } else {
-      this.selection.toggle(candidate.id, candidate.listKey);
-      this.renderSelection();
-    }
-  }
-
-  // Consumed unconditionally once the gesture lands on a candidate: leaving
-  // the key unconsumed at a list boundary (the first card on ArrowUp, the
-  // last on ArrowDown) falls through to the browser's own scrolling, moving
-  // the page while focus stays put. Nothing beyond this point mutates state
-  // when there is nowhere to go, so the no-op case still does not select or
-  // move focus — it only stops the scroll.
-  private handleArrow(event:KeyboardEvent, candidate:SelectionCandidate, offset:1|-1):void {
-    event.preventDefault();
-
-    const next = neighbourItem(this.element, candidate.itemElement, offset);
-    if (!next) {
-      return;
-    }
-
-    if (this.busy) {
-      return;
-    }
-
-    this.focusAndMaybeExtend(event, next);
-  }
-
-  // Same reasoning as handleArrow: consumed as soon as the gesture lands on a
-  // candidate, including both boundary no-ops below (no orderable card at all,
-  // or focus already sitting on the edge), so Home/End never scrolls the page
-  // out from under a card that cannot move any further.
-  private handleBoundary(event:KeyboardEvent, candidate:SelectionCandidate, edge:'first'|'last'):void {
-    event.preventDefault();
-
-    const target = listBoundaryItem(this.element, candidate.itemElement, edge);
-    if (!target) {
-      return;
-    }
-
-    // Focus already sitting on the boundary is only a no-op for the
-    // unmodified key: with Shift held, the range still has to resize out to
-    // that boundary even though focus itself has nowhere left to move.
-    if (target === candidate.itemElement && !event.shiftKey) {
-      return;
-    }
-
-    if (this.busy) {
-      return;
-    }
-
-    this.focusAndMaybeExtend(event, target);
-  }
-
-  private focusAndMaybeExtend(event:KeyboardEvent, target:HTMLElement):void {
-    this.focusItemElement(target);
-
-    if (!event.shiftKey) {
-      return;
-    }
-
-    const candidate = resolveCandidate(this.element, target);
-    if (candidate) {
-      this.extendSelectionTo(candidate);
-    }
-  }
-
-  // Focus is applied through the item's own outlet so the consumer decides
-  // which element inside the row actually holds the tab stop.
-  private focusItemElement(target:HTMLElement):void {
-    const outlet = this.sortableListsItemOutlets.find((item) => item.element === target);
-
-    if (outlet) {
-      outlet.focusItem();
-    } else {
-      target.focus();
-    }
-  }
-
-  // Root-wide, unlike range selection: a range is confined to one list
-  // because "between these two cards" is only meaningful within a single
-  // list, but "everything orderable" has an unambiguous meaning across the
-  // whole Backlogs root, and that is what select-all is for.
-  private handleSelectAll(event:KeyboardEvent, candidate:SelectionCandidate):void {
-    if (!event.metaKey && !event.ctrlKey) {
-      return;
-    }
-
-    event.preventDefault();
-
-    if (this.busy) {
-      return;
-    }
-
-    const ids = [...liveOrderableIds(this.element)];
-    const anchor:SelectionAnchor|null = candidate.orderable
-      ? { id: candidate.id, listKey: candidate.listKey }
-      : this.firstOrderableCandidate();
-
-    this.selection.selectAll(ids, anchor);
-    this.renderSelection();
-  }
-
-  // The design's anchor fallback when the focused card cannot itself anchor
-  // the batch: the first orderable card in document order, resolved through
-  // resolveCandidate like every other candidate rather than re-deriving its
-  // list key from the DOM by hand.
-  private firstOrderableCandidate():SelectionAnchor|null {
-    for (const element of orderedItemElements(this.element)) {
-      const candidate = resolveCandidate(this.element, element);
-      if (candidate?.orderable) {
-        return { id: candidate.id, listKey: candidate.listKey };
-      }
-    }
-
-    return null;
-  }
-
-  private handleEscape(event:KeyboardEvent):void {
-    // BatchSelection#toggle re-bases the anchor even on a deselect, so a
-    // Space that empties the visible selection can still leave an anchor
-    // behind; Escape has to drop that too, or a later Shift gesture would
-    // range from a card the user believes they already cleared.
-    const hadSelection = this.selection.size > 0;
-    if (!hadSelection && this.selection.anchor === null) {
-      return;
-    }
-
-    event.preventDefault();
-    this.selection.clear();
-    // Only a visible selection going away is worth announcing; dropping a
-    // stale, invisible anchor alone leaves the count unchanged, so
-    // renderSelection stays silent on its own.
-    this.renderSelection();
-  }
-
-  private extendSelectionTo(candidate:SelectionCandidate):void {
-    const { anchor } = this.selection;
-
-    if (!anchor) {
-      this.renderRangeRestart(candidate);
-      return;
-    }
-
-    const range = resolveRangeIds(this.element, anchor, candidate);
-
-    if (range.ok) {
-      this.selection.range(range.ids);
-      this.renderSelection();
-      return;
-    }
-
-    if (range.reason === 'crossList') {
-      this.renderRangeRestart(candidate);
-      return;
-    }
-
-    // Same list, unrepresentable span: a truncated block or a fixed
-    // card sits in the way, and the user needs to know which — expanding the
-    // list can surface a truncated block, but it can never make a locked
-    // card orderable, so the two reasons speak different messages.
-    this.announceSelection(range.reason === 'locked' ? 'range_blocked' : 'range_unavailable');
-  }
-
-  // A Shift gesture asks for a range; collapsing it to a single card instead
-  // (no anchor yet to range from, or the anchor sits in a different list) is
-  // a real answer the user needs to hear even when the resulting count
-  // happens to match what was already selected. That is deliberately
-  // different from the count rule renderSelection otherwise applies
-  // everywhere else: an ordinary plain click that leaves the count unchanged
-  // stays silent because the details pane it also opens is its own
-  // feedback, but a Shift gesture that fails to form a range has no other
-  // feedback at all, so this always speaks — and never with the plain count
-  // sentence, which would not tell the user their range was not honoured.
-  private renderRangeRestart(candidate:SelectionCandidate):void {
-    this.selection.replace(candidate.id, candidate.listKey);
-    this.syncSelectionPresentation();
-    this.lastAnnouncedSelectionCount = this.selection.size;
-    this.announceSelection('range_restarted');
-  }
-
-  // The default place that decides whether a selection change is announced:
-  // every call site but renderRangeRestart's narrow exception below funnels
-  // through here rather than passing its own opinion, so a future call site
-  // cannot forget to. The rule is the count, not the gesture — a change in
-  // how many cards are selected is always announced, and a gesture that
-  // leaves the count where it was (an ordinary click replacing a one-card
-  // selection with a different one-card selection, say) stays silent, since
-  // that same click already opens the details pane.
-  private renderSelection():void {
-    this.syncSelectionPresentation();
-
-    const { size } = this.selection;
-    if (size === this.lastAnnouncedSelectionCount) {
-      return;
-    }
-
-    this.lastAnnouncedSelectionCount = size;
-    this.announceSelection(size === 0 ? 'cleared' : 'selected');
-  }
-
-  private syncSelectionPresentation():void {
-    applySelectionPresentation(this.element, this.selection.ids, this.selectionDescriptionIdValue);
-  }
-
-  private announceSelection(key:'selected'|'cleared'|'not_selectable'|'range_unavailable'|'range_blocked'|'range_restarted'):void {
-    void announce(this.selectionMessage(key), { politeness: 'polite' });
-  }
-
-  // The scope is a value rather than a constant so the shared controller can
-  // speak the consumer's vocabulary: Backlogs says "work package", not "item".
-  private selectionMessage(key:string):string {
-    return I18n.t(`${this.announcementScopeValue}.${key}`, { count: this.selection.size });
-  }
 }

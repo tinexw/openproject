@@ -89,10 +89,13 @@ export interface SortableListData extends Record<string|symbol, unknown> {
 // Implemented by the sortable-lists root controller and handed to list/item
 // controllers via outlet callbacks, so children read shared state through a
 // typed reference instead of walking the DOM.
+//
+// Selection is deliberately absent: no child branches on whether the root
+// has it, and it now lives behind SelectionOrchestrator rather than being
+// root state children could read.
 export interface SortableListsRoot {
   readonly element:HTMLElement;
   readonly busy:boolean;
-  readonly selectionEnabled:boolean;
   moveInDirection(itemElement:HTMLElement, direction:MoveDirection):void;
   // A snapshot for menu gating; the click path re-resolves against the live DOM.
   moveAvailability(itemElement:HTMLElement):MoveAvailability|null;
