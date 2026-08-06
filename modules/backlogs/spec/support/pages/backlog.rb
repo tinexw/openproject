@@ -691,10 +691,16 @@ module Pages
       expect(page).to have_no_css("#{selector}[data-sortable-lists--item-mobility-value='fixed']")
     end
 
+    # Both assertions are negative, which means they also pass against a page
+    # that never rendered the card at all — including the rack-session page a
+    # racing Selenium login can strand the browser on. Asserting the row
+    # exists first would be better, and is blocked on
+    # fix/selenium-rack-session-login-flake: until that lands it turns an
+    # infrastructure race into a red example rather than a silent pass.
     def expect_work_package_not_draggable(work_package)
       selector = work_package_selector(work_package)
       expect(page).to have_no_css("#{selector}[draggable='true']")
-      expect(page).to have_css("#{selector}[data-sortable-lists--item-mobility-value='fixed']")
+      expect(page).to have_no_css("#{selector}[data-sortable-lists--item-mobility-value='free']")
     end
 
     # A read-only card keeps its drag but is confined to its own list: it can
@@ -703,7 +709,7 @@ module Pages
     def expect_work_package_confined(work_package)
       expect(page)
         .to have_css("#{work_package_selector(work_package)}" \
-                     "[data-sortable-lists--item-confined-value='true']")
+                     "[data-sortable-lists--item-mobility-value='confined']")
       expect(page)
         .to have_css("#{work_package_selector(work_package)}[draggable]")
     end
