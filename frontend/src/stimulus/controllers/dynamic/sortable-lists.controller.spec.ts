@@ -1142,7 +1142,7 @@ describe('Sortable lists controller', () => {
 
   it('refuses a directional move for a non-movable item', async () => {
     const { root, sourceList, firstSourceItem } = renderFixture();
-    firstSourceItem.setAttribute('data-sortable-lists--item-movable-value', 'false');
+    firstSourceItem.setAttribute('data-sortable-lists--item-mobility-value', 'fixed');
     await ctx.nextFrame();
 
     const controller = ctx.application.getControllerForElementAndIdentifier(root, 'sortable-lists') as SortableListsControllerType;
@@ -1357,7 +1357,7 @@ describe('Sortable lists controller', () => {
   it('lets a plain click on a non-movable card continue to navigate without selecting', async () => {
     const { items } = renderSelectableRoot();
     await ctx.nextFrame();
-    items[0].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    items[0].setAttribute('data-sortable-lists--item-mobility-value', 'fixed');
     const event = new MouseEvent('click', { bubbles: true, cancelable: true });
 
     items[0].dispatchEvent(event);
@@ -1375,7 +1375,7 @@ describe('Sortable lists controller', () => {
     await ctx.nextFrame();
     click(items[0]);
     click(items[1], { metaKey: true });
-    items[2].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    items[2].setAttribute('data-sortable-lists--item-mobility-value', 'fixed');
     const event = new MouseEvent('click', { bubbles: true, cancelable: true });
 
     items[2].dispatchEvent(event);
@@ -1552,7 +1552,7 @@ describe('Sortable lists controller', () => {
   it('tells the user a locked card blocks the range rather than to expand the list', async () => {
     const { items } = renderSelectableRoot();
     await ctx.nextFrame();
-    items[1].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    items[1].setAttribute('data-sortable-lists--item-mobility-value', 'fixed');
 
     click(items[0]);
     announceSpy.mockClear();
@@ -1567,7 +1567,7 @@ describe('Sortable lists controller', () => {
   it('preserves the batch and announces when a non-movable card is meta clicked', async () => {
     const { items } = renderSelectableRoot();
     await ctx.nextFrame();
-    items[1].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    items[1].setAttribute('data-sortable-lists--item-mobility-value', 'fixed');
     const event = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
 
     click(items[0]);
@@ -1761,7 +1761,7 @@ describe('Sortable lists controller', () => {
   it('skips a non-movable card when moving to the list boundary on End', async () => {
     const { items } = renderSelectableRoot();
     await ctx.nextFrame();
-    items[2].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    items[2].setAttribute('data-sortable-lists--item-mobility-value', 'fixed');
     items[0].focus();
 
     keydown(items[0], 'End');
@@ -1792,7 +1792,7 @@ describe('Sortable lists controller', () => {
   it('selects every movable card across every list on meta A', async () => {
     const { items } = renderSelectableRoot();
     await ctx.nextFrame();
-    items[1].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    items[1].setAttribute('data-sortable-lists--item-mobility-value', 'fixed');
     items[0].focus();
 
     keydown(items[0], 'a', { metaKey: true });
@@ -1864,7 +1864,7 @@ describe('Sortable lists controller', () => {
   it('anchors the batch on the first movable card after meta A when the focused card is not movable', async () => {
     const { items } = renderSelectableRoot();
     await ctx.nextFrame();
-    items[0].setAttribute('data-sortable-lists--item-movable-value', 'false');
+    items[0].setAttribute('data-sortable-lists--item-mobility-value', 'fixed');
     items[0].focus();
 
     keydown(items[0], 'a', { metaKey: true });

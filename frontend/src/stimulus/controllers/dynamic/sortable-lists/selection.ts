@@ -29,7 +29,7 @@
 import type { SelectionAnchor } from 'core-common/batch-selection';
 import { attributeTokenList } from 'core-app/shared/helpers/dom-helpers';
 import {
-  isMovableItem,
+  isOrderableItem,
   resolveItemElement,
   resolveItemId,
   rowOf,
@@ -51,7 +51,7 @@ export interface SelectionCandidate {
   focusHost:HTMLElement;
   id:string;
   listKey:string;
-  movable:boolean;
+  orderable:boolean;
 }
 
 export const itemFocusTargetSelector = '[data-sortable-lists--item-target~="focus"]';
@@ -128,7 +128,7 @@ export function resolveCandidate(root:HTMLElement, target:EventTarget|null):Sele
     focusHost: itemElement.querySelector<HTMLElement>(itemFocusTargetSelector) ?? itemElement,
     id,
     listKey: listKeyOf(list),
-    movable: isMovableItem(itemElement),
+    orderable: isOrderableItem(itemElement),
   };
 }
 
@@ -140,12 +140,12 @@ export function orderedSelectedIds(root:HTMLElement, ids:ReadonlySet<string>):st
     .filter((id):id is string => id !== null && ids.has(id));
 }
 
-export function liveMovableIds(root:HTMLElement):Set<string> {
+export function liveOrderableIds(root:HTMLElement):Set<string> {
   const ids = new Set<string>();
 
   for (const item of orderedItemElements(root)) {
     const id = resolveItemId(item);
-    if (id && isMovableItem(item)) {
+    if (id && isOrderableItem(item)) {
       ids.add(id);
     }
   }
@@ -168,7 +168,7 @@ export type RangeResolution =
   | { ok:false; reason:RangeUnavailableReason };
 
 /**
- * The contiguous, movable range between the anchor and the candidate, or a
+ * The contiguous, orderable range between the anchor and the candidate, or a
  * reason the range cannot be expressed.
  *
  * A range is refused rather than trimmed when it would cross a list boundary,
@@ -216,7 +216,7 @@ export function resolveRangeIds(
       return { ok: false, reason: 'unavailable' };
     }
 
-    if (!isMovableItem(item)) {
+    if (!isOrderableItem(item)) {
       return { ok: false, reason: 'locked' };
     }
 
@@ -295,7 +295,7 @@ function listItems(root:HTMLElement, from:HTMLElement):HTMLElement[] {
   return list ? Array.from(list.querySelectorAll<HTMLElement>(sortableItemSelector)) : [];
 }
 
-// Arrows step through the list as rendered, non-movable cards included: the
+// Arrows step through the list as rendered, fixed cards included: the
 // design's keyboard table does not qualify them, and a card in the way is
 // still a real card to land on. This is deliberately not symmetric with
 // listBoundaryItem below, which does filter — keep it that way rather than
@@ -312,16 +312,16 @@ export function neighbourItem(root:HTMLElement, from:HTMLElement, offset:1|-1):H
 }
 
 // Unlike neighbourItem, Home/End are specified to land on the first/last
-// *movable* card in the list: the design's keyboard table reads "Focus the
-// first/last loaded movable card in the list". A trailing or leading
-// non-movable card (a locked item, say) is skipped rather than becoming the
+// *orderable* card in the list: the design's keyboard table reads "Focus the
+// first/last loaded movable card in the list". A trailing or leading fixed
+// card (a locked item, say) is skipped rather than becoming the
 // jump target.
 export function listBoundaryItem(
   root:HTMLElement,
   from:HTMLElement,
   edge:'first'|'last',
 ):HTMLElement|null {
-  const items = listItems(root, from).filter(isMovableItem);
+  const items = listItems(root, from).filter(isOrderableItem);
 
   if (items.length === 0) {
     return null;

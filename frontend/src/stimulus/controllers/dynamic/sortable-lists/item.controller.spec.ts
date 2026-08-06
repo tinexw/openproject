@@ -115,17 +115,15 @@ describe('Sortable lists item controller', () => {
     {
       handle = null,
       root = fakeRoot(),
-      confinedValue = false,
       externalUrl = null,
       label = null,
-      movable = true,
+      mobility = 'free',
     }:{
       handle?:HTMLElement|null;
       root?:SortableListsRoot|null;
-      confinedValue?:boolean;
       externalUrl?:string|null;
       label?:string|null;
-      movable?:boolean;
+      mobility?:string;
     } = {},
   ) {
     const controller = Object.create(ItemController.prototype) as InstanceType<typeof ItemControllerType>;
@@ -135,15 +133,15 @@ describe('Sortable lists item controller', () => {
     Object.defineProperty(controller, 'hasIdValue', { value: true });
     Object.defineProperty(controller, 'typeValue', { value: 'item' });
     Object.defineProperty(controller, 'hasTypeValue', { value: true });
-    Object.defineProperty(controller, 'confinedValue', { value: confinedValue });
     Object.defineProperty(controller, 'externalUrlValue', { value: externalUrl ?? '' });
     Object.defineProperty(controller, 'hasExternalUrlValue', { value: externalUrl !== null });
     Object.defineProperty(controller, 'labelValue', { value: label ?? '' });
     Object.defineProperty(controller, 'hasLabelValue', { value: label !== null });
-    // Matches the value's declared default of true: this helper stands in for
-    // Stimulus's own value coercion, which every other test here relies on
-    // implicitly by never mentioning movability at all.
-    Object.defineProperty(controller, 'movableValue', { value: movable });
+    // Written to the element, not stubbed as a controller property: the
+    // controller reads mobility through list-dom's parser so that missing and
+    // malformed values resolve in exactly one place. Stubbing the value here
+    // would bypass that parser and test something the controller never does.
+    element.setAttribute('data-sortable-lists--item-mobility-value', mobility);
     Object.defineProperty(controller, 'hasHandleTarget', { value: handle !== null });
     if (handle) {
       Object.defineProperty(controller, 'handleTarget', { value: handle });
@@ -205,7 +203,7 @@ describe('Sortable lists item controller', () => {
     Object.defineProperty(controller, 'hasIdValue', { value: id !== '' });
     Object.defineProperty(controller, 'typeValue', { value: type });
     Object.defineProperty(controller, 'hasTypeValue', { value: type !== '' });
-    Object.defineProperty(controller, 'confinedValue', { value: false });
+
     Object.defineProperty(controller, 'hasHandleTarget', { value: false });
 
     controller.connect();
@@ -515,7 +513,7 @@ describe('Sortable lists item controller', () => {
     it('still registers a drag source', () => {
       const element = document.createElement('li');
 
-      connectedControllerFor(element, { confinedValue: true });
+      connectedControllerFor(element, { mobility: 'confined' });
 
       expect(draggable).toHaveBeenCalledWith(expect.objectContaining({ element }));
     });
@@ -757,7 +755,7 @@ describe('Sortable lists item controller', () => {
     const element = document.createElement('article');
     connectedControllerFor(element, {
       root: fakeRoot(root, { ownerListElement: sourceList }),
-      confinedValue: true,
+      mobility: 'confined',
     });
 
     expect(vi.mocked(draggable).mock.lastCall?.[0].getInitialData?.(draggableArgs(element)))
@@ -1253,14 +1251,14 @@ describe('Sortable lists item controller', () => {
     });
 
     // Mounts a minimal item row through the real Stimulus lifecycle, the same
-    // way renderBacklogsRow and mountItemController do above, so movableValue
-    // and the focus target come from real value/target wiring rather than
-    // stubbed properties. Omitting `movable` renders no attribute at all,
-    // exercising the controller's default. The root carries a tabindex so the
-    // no-focus-target case has something focusable to land on, the way a
-    // consumer that makes the row itself focusable would render it.
+    // way renderBacklogsRow and mountItemController do above, so mobility and
+    // the focus target come from real value/target wiring rather than stubbed
+    // properties. Omitting `mobility` renders no attribute at all, exercising
+    // the free default. The root carries a tabindex so the no-focus-target
+    // case has something focusable to land on, the way a consumer that makes
+    // the row itself focusable would render it.
     async function renderItem(
-      { movable, withFocusTarget = false }:{ movable?:boolean; withFocusTarget?:boolean } = {},
+      { mobility, withFocusTarget = false }:{ mobility?:string; withFocusTarget?:boolean } = {},
     ):Promise<HTMLElement> {
       ctx = await setupStimulusTest({
         controllers: {
@@ -1268,7 +1266,7 @@ describe('Sortable lists item controller', () => {
         },
       });
 
-      const movableAttr = movable === undefined ? '' : ` data-sortable-lists--item-movable-value="${movable}"`;
+      const mobilityAttr = mobility === undefined ? '' : ` data-sortable-lists--item-mobility-value="${mobility}"`;
       const focusTargetHtml = withFocusTarget
         ? '<button type="button" data-sortable-lists--item-target="focus">Focus me</button>'
         : '';
@@ -1278,7 +1276,7 @@ describe('Sortable lists item controller', () => {
           tabindex="0"
           data-controller="sortable-lists--item"
           data-sortable-lists--item-id-value="1"
-          data-sortable-lists--item-type-value="work_package"${movableAttr}
+          data-sortable-lists--item-type-value="work_package"${mobilityAttr}
         >${focusTargetHtml}</li>
       `);
 
@@ -1289,34 +1287,34 @@ describe('Sortable lists item controller', () => {
       return ctx.getController<InstanceType<typeof ItemControllerType>>('sortable-lists--item', element);
     }
 
-    it('registers a draggable when the item is movable', async () => {
-      const item = await renderItem({ movable: true });
+    it('registers a draggable when the item takes part in ordering', async () => {
+      const item = await renderItem({ mobility: 'free' });
 
       expect(item.hasAttribute('draggable')).toBe(true);
     });
 
-    it('does not register a draggable when the item is not movable', async () => {
-      const item = await renderItem({ movable: false });
+    it('does not register a draggable when the item is fixed', async () => {
+      const item = await renderItem({ mobility: 'fixed' });
 
       expect(item.hasAttribute('draggable')).toBe(false);
     });
 
-    // A non-movable row is still an ordered participant: it anchors drops for
-    // its movable neighbours, so its drop target must stay registered.
-    it('still registers a drop target when the item is not movable', async () => {
-      const item = await renderItem({ movable: false });
+    // A fixed row is still an ordered participant: it anchors drops for its
+    // orderable neighbours, so its drop target must stay registered.
+    it('still registers a drop target when the item is fixed', async () => {
+      const item = await renderItem({ mobility: 'fixed' });
 
       expect(item.hasAttribute('data-drop-target-for-element')).toBe(true);
     });
 
-    it('treats a missing movable attribute as movable', async () => {
+    it('treats a missing mobility attribute as free', async () => {
       const item = await renderItem({});
 
       expect(item.hasAttribute('draggable')).toBe(true);
     });
 
     it('focuses its focus target', async () => {
-      const item = await renderItem({ movable: true, withFocusTarget: true });
+      const item = await renderItem({ mobility: 'free', withFocusTarget: true });
       const controller = controllerFor(item);
 
       controller.focusItem();
@@ -1325,7 +1323,7 @@ describe('Sortable lists item controller', () => {
     });
 
     it('focuses itself when it has no focus target', async () => {
-      const item = await renderItem({ movable: true });
+      const item = await renderItem({ mobility: 'free' });
       const controller = controllerFor(item);
 
       controller.focusItem();
@@ -1334,7 +1332,7 @@ describe('Sortable lists item controller', () => {
     });
 
     it('collapses the batch onto the dragged item when a drag starts', async () => {
-      const item = await renderItem({ movable: true });
+      const item = await renderItem({ mobility: 'free' });
       const controller = controllerFor(item);
       const collapseSelectionForDrag = vi.fn();
       const root:SortableListsRoot = {

@@ -30,7 +30,7 @@ import {
   applySelectionPresentation,
   batchSelectedAttribute,
   listBoundaryItem,
-  liveMovableIds,
+  liveOrderableIds,
   neighbourItem,
   orderedSelectedIds,
   resolveCandidate,
@@ -62,7 +62,7 @@ describe('sortable-lists selection adapter', () => {
         <ul>
           <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="4"></li>
           <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="5"
-              data-sortable-lists--item-movable-value="false"></li>
+              data-sortable-lists--item-mobility-value="fixed"></li>
         </ul>
       </div>
     `;
@@ -84,7 +84,7 @@ describe('sortable-lists selection adapter', () => {
       focusHost: itemFor('1'),
       id: '1',
       listKey: 'sprint:7',
-      movable: true,
+      orderable: true,
     });
   });
 
@@ -101,7 +101,7 @@ describe('sortable-lists selection adapter', () => {
   });
 
   it('resolves a non-movable candidate', () => {
-    expect(candidateFor('5').movable).toBe(false);
+    expect(candidateFor('5').orderable).toBe(false);
   });
 
   it('does not resolve a truncation marker as a candidate', () => {
@@ -119,7 +119,7 @@ describe('sortable-lists selection adapter', () => {
   });
 
   it('lists only live movable ids', () => {
-    expect([...liveMovableIds(root)]).toEqual(['1', '2', '3', '4']);
+    expect([...liveOrderableIds(root)]).toEqual(['1', '2', '3', '4']);
   });
 
   it('resolves an ascending range within one list', () => {
@@ -303,7 +303,7 @@ describe('sortable-lists selection adapter', () => {
   });
 
   it('returns null when no movable card remains in the list', () => {
-    itemFor('4').setAttribute('data-sortable-lists--item-movable-value', 'false');
+    itemFor('4').setAttribute('data-sortable-lists--item-mobility-value', 'fixed');
 
     expect(listBoundaryItem(root, itemFor('4'), 'first')).toBeNull();
     expect(listBoundaryItem(root, itemFor('4'), 'last')).toBeNull();

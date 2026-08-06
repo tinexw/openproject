@@ -44,7 +44,7 @@ module Backlogs
     end
 
     # Every sortable card drags: a read-only one stays a drag source too, only
-    # confined to its own list (see {#confined?}).
+    # confined to its own list (see {#mobility}).
     def draggable?
       sortable?
     end
@@ -113,19 +113,12 @@ module Backlogs
         sortable_lists__item_id_value: work_package.id,
         sortable_lists__item_label_value: work_package.to_fs(:caption),
         sortable_lists__item_type_value: "work_package",
-        sortable_lists__item_confined_value: confined?,
-        sortable_lists__item_movable_value: sortable?,
+        sortable_lists__item_mobility_value: mobility,
         # Native drag payload for external consumers; the same absolute URL
         # as the card menu's "Copy URL to clipboard" item. The label above
         # doubles as the link text of the text/html flavour.
         sortable_lists__item_external_url_value: url_helpers.work_package_url(work_package)
       }
-    end
-
-    # Whether the card's drag is pinned to its own list: it may reorder in
-    # place, but no other container accepts it.
-    def confined?
-      sortable? && !movable?
     end
 
     public

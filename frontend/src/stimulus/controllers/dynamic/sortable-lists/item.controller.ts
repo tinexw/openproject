@@ -48,7 +48,7 @@ import {
   type SortableItemData,
   type SortableListsRoot,
 } from './drag-and-drop';
-import { isMoveDirection, sortableItemSelector } from './list-dom';
+import { isConfinedItem, isMoveDirection, isOrderableItem, sortableItemSelector } from './list-dom';
 import { renderDragPreview } from './preview';
 
 type CleanupFn = () => void;
@@ -62,14 +62,13 @@ export default class ItemController extends Controller<HTMLElement> implements R
     type: String,
     externalUrl: String,
     hideUnavailable: { type: Boolean, default: true },
-    // A confined item is still a full drag source, but only its own list and
-    // that list's rows accept it as a drop target; foreign containers refuse
-    // it, so a release there lands nowhere and the item stays put. Consumers
-    // use this for items the server allows to reorder in place but refuses to
-    // relocate to another container.
-    confined: { type: Boolean, default: false },
     label: String,
-    movable: { type: Boolean, default: true },
+    // What ordering this item takes part in; see ItemMobility in list-dom.
+    // A `confined` item is still a full drag source, but only its own list and
+    // that list's rows accept it as a drop target; foreign containers refuse
+    // it, so a release there lands nowhere and the item stays put. `free` by
+    // default, so a consumer that renders no mobility keeps working.
+    mobility: { type: String, default: 'free' },
   };
 
   declare readonly idValue:string;
@@ -79,10 +78,9 @@ export default class ItemController extends Controller<HTMLElement> implements R
   declare readonly externalUrlValue:string;
   declare readonly hasExternalUrlValue:boolean;
   declare readonly hideUnavailableValue:boolean;
-  declare readonly confinedValue:boolean;
   declare readonly labelValue:string;
   declare readonly hasLabelValue:boolean;
-  declare readonly movableValue:boolean;
+  declare readonly mobilityValue:string;
 
   declare readonly handleTarget:HTMLElement;
   declare readonly hasHandleTarget:boolean;
@@ -147,7 +145,7 @@ export default class ItemController extends Controller<HTMLElement> implements R
 
   move(event:ActionEvent):void {
     const item = event.currentTarget;
-    if (!this.movableValue || !this.hasMenuElement || !(item instanceof HTMLElement)) {
+    if (!isOrderableItem(this.element) || !this.hasMenuElement || !(item instanceof HTMLElement)) {
       return;
     }
 
@@ -191,7 +189,7 @@ export default class ItemController extends Controller<HTMLElement> implements R
     this.cleanupFn = combine(
       // A non-movable item registers no draggable, but stays a drop target:
       // it is still an addressable position its movable neighbours anchor on.
-      this.movableValue ? this.registerDraggable() : () => undefined,
+      isOrderableItem(this.element) ? this.registerDraggable() : () => undefined,
       this.registerDropTarget(),
     );
   }
@@ -374,7 +372,7 @@ export default class ItemController extends Controller<HTMLElement> implements R
       type: this.typeValue,
       rootElement: this.root?.element ?? null,
       sourceListElement: this.root?.ownerListElementOf(this.element) ?? null,
-      confined: this.confinedValue,
+      confined: isConfinedItem(this.element),
     });
   }
 

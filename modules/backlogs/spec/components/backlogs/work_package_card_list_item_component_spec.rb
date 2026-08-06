@@ -81,9 +81,8 @@ RSpec.describe Backlogs::WorkPackageCardListItemComponent, type: :component do
         controller: "sortable-lists--item",
         sortable_lists__item_id_value: work_package.id,
         sortable_lists__item_type_value: "work_package",
-        sortable_lists__item_confined_value: false,
         sortable_lists__item_label_value: work_package.to_fs(:caption),
-        sortable_lists__item_movable_value: true
+        sortable_lists__item_mobility_value: "free"
       )
       expect(item.row_args[:draggable]).to be(true)
       expect(item.row_args).not_to include(:tabindex)
@@ -127,8 +126,8 @@ RSpec.describe Backlogs::WorkPackageCardListItemComponent, type: :component do
         expect(item.row_args[:data]).to include(controller: "sortable-lists--item")
       end
 
-      it "marks the item as not movable" do
-        expect(item.row_args[:data]).to include(sortable_lists__item_movable_value: false)
+      it "marks the item as taking no part in ordering" do
+        expect(item.row_args[:data]).to include(sortable_lists__item_mobility_value: "fixed")
       end
 
       it "does not mark the row as draggable" do
@@ -172,7 +171,7 @@ RSpec.describe Backlogs::WorkPackageCardListItemComponent, type: :component do
         expect(item.row_args[:data]).to include(
           controller: "sortable-lists--item",
           sortable_lists__item_id_value: work_package.id,
-          sortable_lists__item_confined_value: true
+          sortable_lists__item_mobility_value: "confined"
         )
       end
 
@@ -195,7 +194,7 @@ RSpec.describe Backlogs::WorkPackageCardListItemComponent, type: :component do
 
       it "does not confine the row" do
         expect(item.row_args[:draggable]).to be(true)
-        expect(item.row_args[:data]).to include(sortable_lists__item_confined_value: false)
+        expect(item.row_args[:data]).to include(sortable_lists__item_mobility_value: "free")
       end
     end
   end

@@ -154,10 +154,10 @@ RSpec.describe Backlogs::SprintComponent, type: :component do
                               priority: default_priority, story_points: 5, position: 1, sprint:)
       end
 
-      it "still renders the row as a sortable item, but not movable or draggable" do
+      it "still renders the row as a sortable item, but fixed and not draggable" do
         expect(rendered_component).to have_css(".Box-row#work_package_#{work_package1.id}") do |row|
           expect(row["data-controller"]).to eq("sortable-lists--item")
-          expect(row["data-sortable-lists--item-movable-value"]).to eq("false")
+          expect(row["data-sortable-lists--item-mobility-value"]).to eq("fixed")
         end
         expect(rendered_component).to have_no_css(".Box-row#work_package_#{work_package1.id}[draggable='true']")
         expect(rendered_component).to have_no_css(".op-work-package-card[data-sortable-lists--item-id-value]")

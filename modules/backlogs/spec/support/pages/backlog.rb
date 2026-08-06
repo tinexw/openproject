@@ -681,20 +681,20 @@ module Pages
     # Every row now carries `data-sortable-lists--item-id-value` regardless of
     # whether the user may move it (a fixed row still anchors a neighbour's
     # drop), so the item id is no longer what distinguishes a movable row.
-    # `draggable` and the item's `movable` value are set independently by the
+    # `draggable` and the item's `mobility` value are set independently by the
     # component and read by separate consumers (the browser's native drag
     # start, and the item controller's own drag registration), so both are
     # checked rather than trusting either alone to stay in sync.
     def expect_work_package_draggable(work_package)
       selector = work_package_selector(work_package)
       expect(page).to have_css("#{selector}[draggable='true']")
-      expect(page).to have_css("#{selector}[data-sortable-lists--item-movable-value='true']")
+      expect(page).to have_no_css("#{selector}[data-sortable-lists--item-mobility-value='fixed']")
     end
 
     def expect_work_package_not_draggable(work_package)
       selector = work_package_selector(work_package)
       expect(page).to have_no_css("#{selector}[draggable='true']")
-      expect(page).to have_no_css("#{selector}[data-sortable-lists--item-movable-value='true']")
+      expect(page).to have_css("#{selector}[data-sortable-lists--item-mobility-value='fixed']")
     end
 
     # A read-only card keeps its drag but is confined to its own list: it can

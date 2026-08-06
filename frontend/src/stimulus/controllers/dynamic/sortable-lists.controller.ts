@@ -49,7 +49,7 @@ import {
 } from './sortable-lists/drag-and-drop';
 import {
   captureRowPositions,
-  isMovableItem,
+  isOrderableItem,
   reorderRows,
   resolveDirectionalPreviousItemId,
   resolveItemId,
@@ -67,7 +67,7 @@ import {
 import {
   applySelectionPresentation,
   listBoundaryItem,
-  liveMovableIds,
+  liveOrderableIds,
   neighbourItem,
   orderedItemElements,
   orderedSelectedIds,
@@ -195,7 +195,7 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       // count through the same rule as every other selection change, instead
       // of a second, easily-missed announcement path.
       if (this.selectionEnabled) {
-        this.selection.prune(liveMovableIds(this.element));
+        this.selection.prune(liveOrderableIds(this.element));
         this.renderSelection();
       }
     });
@@ -248,7 +248,7 @@ export default class SortableListsController extends Controller<HTMLElement> imp
     }
 
     const candidate = resolveCandidate(this.element, itemElement);
-    if (!candidate?.movable) {
+    if (!candidate?.orderable) {
       return;
     }
 
@@ -272,7 +272,7 @@ export default class SortableListsController extends Controller<HTMLElement> imp
     // check that does not know about per-work-package movability, so a stale
     // or over-permissive menu must not be able to execute a move the server
     // will refuse.
-    if (this.busy || !isMovableItem(itemElement)) {
+    if (this.busy || !isOrderableItem(itemElement)) {
       return;
     }
 
@@ -588,9 +588,9 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       // An ordinary click deliberately collapses the batch onto the clicked
       // card and is then allowed through, so the details pane still opens.
       // That collapse applies whether or not the card itself is selectable:
-      // the card only joins the batch when it is movable, but a non-movable
+      // the card only joins the batch when it is orderable, but a fixed
       // card must not be able to leave an unrelated batch selected behind it.
-      if (candidate.movable) {
+      if (candidate.orderable) {
         this.selection.replace(candidate.id, candidate.listKey);
         this.renderSelection();
       } else {
@@ -612,7 +612,7 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       return;
     }
 
-    if (!candidate.movable) {
+    if (!candidate.orderable) {
       this.announceSelection('not_selectable');
       return;
     }
@@ -695,7 +695,7 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       return;
     }
 
-    if (!candidate.movable) {
+    if (!candidate.orderable) {
       this.announceSelection('not_selectable');
       return;
     }
@@ -730,7 +730,7 @@ export default class SortableListsController extends Controller<HTMLElement> imp
   }
 
   // Same reasoning as handleArrow: consumed as soon as the gesture lands on a
-  // candidate, including both boundary no-ops below (no movable card at all,
+  // candidate, including both boundary no-ops below (no orderable card at all,
   // or focus already sitting on the edge), so Home/End never scrolls the page
   // out from under a card that cannot move any further.
   private handleBoundary(event:KeyboardEvent, candidate:SelectionCandidate, edge:'first'|'last'):void {
@@ -782,7 +782,7 @@ export default class SortableListsController extends Controller<HTMLElement> imp
 
   // Root-wide, unlike range selection: a range is confined to one list
   // because "between these two cards" is only meaningful within a single
-  // list, but "everything movable" has an unambiguous meaning across the
+  // list, but "everything orderable" has an unambiguous meaning across the
   // whole Backlogs root, and that is what select-all is for.
   private handleSelectAll(event:KeyboardEvent, candidate:SelectionCandidate):void {
     if (!event.metaKey && !event.ctrlKey) {
@@ -795,23 +795,23 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       return;
     }
 
-    const ids = [...liveMovableIds(this.element)];
-    const anchor:SelectionAnchor|null = candidate.movable
+    const ids = [...liveOrderableIds(this.element)];
+    const anchor:SelectionAnchor|null = candidate.orderable
       ? { id: candidate.id, listKey: candidate.listKey }
-      : this.firstMovableCandidate();
+      : this.firstOrderableCandidate();
 
     this.selection.selectAll(ids, anchor);
     this.renderSelection();
   }
 
   // The design's anchor fallback when the focused card cannot itself anchor
-  // the batch: the first movable card in document order, resolved through
+  // the batch: the first orderable card in document order, resolved through
   // resolveCandidate like every other candidate rather than re-deriving its
   // list key from the DOM by hand.
-  private firstMovableCandidate():SelectionAnchor|null {
+  private firstOrderableCandidate():SelectionAnchor|null {
     for (const element of orderedItemElements(this.element)) {
       const candidate = resolveCandidate(this.element, element);
-      if (candidate?.movable) {
+      if (candidate?.orderable) {
         return { id: candidate.id, listKey: candidate.listKey };
       }
     }
@@ -858,10 +858,10 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       return;
     }
 
-    // Same list, unrepresentable span: a truncated block or an immovable
+    // Same list, unrepresentable span: a truncated block or a fixed
     // card sits in the way, and the user needs to know which — expanding the
     // list can surface a truncated block, but it can never make a locked
-    // card movable, so the two reasons speak different messages.
+    // card orderable, so the two reasons speak different messages.
     this.announceSelection(range.reason === 'locked' ? 'range_blocked' : 'range_unavailable');
   }
 
