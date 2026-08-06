@@ -160,7 +160,7 @@ RSpec.describe "Backlogs::Backlog", :skip_csrf, type: :rails_request do
       context "when a bucket filter hides the inbox" do
         shared_let(:backlog_bucket) { create(:backlog_bucket, project:) }
 
-        it "still renders the persistent selection count and shared description" do
+        it "still renders the shared selection description" do
           get "/projects/#{project.identifier}/backlogs/backlog",
               params: { bucket_ids: [backlog_bucket.id] },
               headers: { "Turbo-Frame" => "backlogs_container" }
@@ -172,6 +172,29 @@ RSpec.describe "Backlogs::Backlog", :skip_csrf, type: :rails_request do
           # selection must stay describable for whichever lists remain on
           # screen.
           expect(response.body).to include(%(id="#{Backlogs::SelectionDescriptionComponent::DESCRIPTION_ID}"))
+        end
+      end
+
+      # Selection consumes Space, the arrows, Home/End and Ctrl/Cmd+A. On a
+      # page where the permission makes every card fixed, that is pure loss:
+      # the keys stop scrolling and announce a refusal for a capability the
+      # page never offers. The root must not opt in at all.
+      context "when the user cannot manage sprint items" do
+        shared_let(:viewer_role) do
+          create(:project_role, permissions: %i[view_sprints view_work_packages])
+        end
+        shared_let(:viewer) { create(:user, member_with_roles: { project => viewer_role }) }
+
+        current_user { viewer }
+
+        # A full page load, not a frame request: the sortable root and its
+        # selection values live on the wrapper in show.html.erb, which a
+        # Turbo-Frame request never renders.
+        it "does not enable batch selection" do
+          get "/projects/#{project.identifier}/backlogs/backlog"
+
+          expect(response).to have_http_status(:ok)
+          expect(response.body).to include('data-sortable-lists-selection-enabled-value="false"')
         end
       end
     end

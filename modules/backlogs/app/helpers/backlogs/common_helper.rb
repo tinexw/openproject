@@ -49,6 +49,22 @@ module Backlogs
       user_allowed?(:share_sprint)
     end
 
+    # Batch selection is the same page-level capability as ordering: with no
+    # right to reorder, a batch has nothing it could ever be used for, and
+    # enabling it would only cost the viewer their Space, arrow, Home/End and
+    # Ctrl/Cmd+A keys.
+    #
+    # Takes the project rather than resolving it the way the predicates above
+    # do: those are called from components, which expose `project` as a
+    # method, while this one is called from the backlog view, where no such
+    # method exists.
+    #
+    # @param project [Project] the project the page is scoped to.
+    # @return [Boolean] whether the page should offer batch selection at all.
+    def batch_selection_allowed?(project)
+      user_allowed?(:manage_sprint_items, project:)
+    end
+
     def backlog_filters
       RequestStore.fetch(:backlog_filters) do
         Backlogs::BacklogFilters.from_params(permitted_params.backlog_filters)
