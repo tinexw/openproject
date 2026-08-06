@@ -70,13 +70,11 @@ export interface SelectionHost {
 export class SelectionOrchestrator {
   private readonly selection = new BatchSelection();
 
-  // The count last spoken to assistive technology, so renderSelection can
-  // decide on its own whether a change is worth announcing rather than
-  // trusting each call site to remember. A plain click through the backlog
-  // replaces the selection on almost every gesture; announcing that on top
-  // of the details pane it also opens would be noise unless the number of
-  // selected cards actually moved.
-  private lastAnnouncedSelectionCount = 0;
+  // What the previous render painted, updated after every render including
+  // the silent ones. Comparing against the last *announced* membership would
+  // drift: a silent navigation render in between leaves a stale baseline, so
+  // the next genuine no-op would look like a change and speak.
+  private lastRenderedIds:ReadonlySet<string> = new Set();
 
   constructor(private readonly host:SelectionHost) {}
 
@@ -107,7 +105,7 @@ export class SelectionOrchestrator {
     }
 
     this.selection.replace(candidate.id, candidate.listKey);
-    this.renderSelection();
+    this.renderSelection('selection');
   }
 
   readonly handleClick = (event:MouseEvent):void => {
@@ -135,10 +133,10 @@ export class SelectionOrchestrator {
       // card must not be able to leave an unrelated batch selected behind it.
       if (candidate.orderable) {
         this.selection.replace(candidate.id, candidate.listKey);
-        this.renderSelection();
+        this.renderSelection('navigation');
       } else {
         this.selection.clear();
-        this.renderSelection();
+        this.renderSelection('navigation');
       }
       return;
     }
@@ -164,7 +162,7 @@ export class SelectionOrchestrator {
       this.extendSelectionTo(candidate);
     } else {
       this.selection.toggle(candidate.id, candidate.listKey);
-      this.renderSelection();
+      this.renderSelection('selection');
     }
   };
 
@@ -243,7 +241,7 @@ export class SelectionOrchestrator {
       this.extendSelectionTo(candidate);
     } else {
       this.selection.toggle(candidate.id, candidate.listKey);
-      this.renderSelection();
+      this.renderSelection('selection');
     }
   }
 
@@ -334,7 +332,7 @@ export class SelectionOrchestrator {
       : this.firstOrderableCandidate();
 
     this.selection.selectAll(ids, anchor);
-    this.renderSelection();
+    this.renderSelection('selection');
   }
 
   // The design's anchor fallback when the focused card cannot itself anchor
@@ -367,7 +365,7 @@ export class SelectionOrchestrator {
     // Only a visible selection going away is worth announcing; dropping a
     // stale, invisible anchor alone leaves the count unchanged, so
     // renderSelection stays silent on its own.
-    this.renderSelection();
+    this.renderSelection('selection');
   }
 
   private extendSelectionTo(candidate:SelectionCandidate):void {
@@ -382,7 +380,7 @@ export class SelectionOrchestrator {
 
     if (range.ok) {
       this.selection.range(range.ids);
-      this.renderSelection();
+      this.renderSelection('selection');
       return;
     }
 
@@ -411,28 +409,40 @@ export class SelectionOrchestrator {
   private renderRangeRestart(candidate:SelectionCandidate):void {
     this.selection.replace(candidate.id, candidate.listKey);
     this.syncSelectionPresentation();
-    this.lastAnnouncedSelectionCount = this.selection.size;
+    this.lastRenderedIds = new Set(this.selection.ids);
     this.announceSelection('range_restarted');
   }
 
-  // The default place that decides whether a selection change is announced:
-  // every call site but renderRangeRestart's narrow exception below funnels
-  // through here rather than passing its own opinion, so a future call site
-  // cannot forget to. The rule is the count, not the gesture — a change in
-  // how many cards are selected is always announced, and a gesture that
-  // leaves the count where it was (an ordinary click replacing a one-card
-  // selection with a different one-card selection, say) stays silent, since
-  // that same click already opens the details pane.
-  private renderSelection():void {
+  /**
+   * Paints the selection and decides whether to announce it.
+   *
+   * Every call site but renderRangeRestart's narrow exception funnels through
+   * here, and states which kind of gesture it is rather than its own
+   * announcement policy — a fact the call site knows, so a future one cannot
+   * get the policy wrong by forgetting it.
+   *
+   * The rule is the gesture class, not the count. A `navigation` gesture (a
+   * plain click) announces only when the number of selected cards moves,
+   * because the details pane it also opens is its own feedback and repeating
+   * the same count on every click through the backlog would be noise. A
+   * `selection` gesture announces whenever membership changes, because it has
+   * no other feedback at all: a Shift-click that resizes a range to a
+   * different set of the same size changed something the user must hear.
+   */
+  private renderSelection(kind:'navigation'|'selection'):void {
+    const previous = this.lastRenderedIds;
     this.syncSelectionPresentation();
 
-    const { size } = this.selection;
-    if (size === this.lastAnnouncedSelectionCount) {
-      return;
-    }
+    const current = new Set(this.selection.ids);
+    this.lastRenderedIds = current;
 
-    this.lastAnnouncedSelectionCount = size;
-    this.announceSelection(size === 0 ? 'cleared' : 'selected');
+    const changed = kind === 'navigation'
+      ? current.size !== previous.size
+      : current.size !== previous.size || [...current].some((id) => !previous.has(id));
+
+    if (changed) {
+      this.announceSelection(current.size === 0 ? 'cleared' : 'selected');
+    }
   }
 
   private syncSelectionPresentation():void {
@@ -455,7 +465,7 @@ export class SelectionOrchestrator {
   // model, so the DOM has to be brought back in line either way.
   reconcile():void {
     this.selection.prune(liveOrderableIds(this.host.rootElement));
-    this.renderSelection();
+    this.renderSelection('selection');
   }
 
   // Removes presentation without touching the model. Whatever restores the

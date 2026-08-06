@@ -165,6 +165,66 @@ describe('SelectionOrchestrator', () => {
     expect(orchestrator.selectedIds()).toEqual(['1']);
   });
 
+  describe('announcements', () => {
+    const spoken = () => announceSpy.mock.calls.map((call) => call[0]);
+
+    // A Shift gesture that resizes a range to a different set of the same
+    // size changed something the user needs to hear; it has no details pane
+    // to serve as its own feedback.
+    it('announces a range that swaps membership at the same size', () => {
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      orchestrator.handleClick(clickOn(item('2')));
+      orchestrator.handleClick(clickOn(item('3'), { shiftKey: true }));
+      announceSpy.mockClear();
+
+      orchestrator.handleClick(clickOn(item('1'), { shiftKey: true }));
+
+      expect(orchestrator.selectedIds()).toEqual(['1', '2']);
+      expect(spoken()).toEqual(['2 items selected.']);
+    });
+
+    // The baseline is what the previous render painted, not what it last
+    // announced. Tracking the announcement instead would leave a stale
+    // baseline behind a silent navigation render, making the next genuine
+    // no-op look like a change.
+    it('stays silent when a selection gesture changes nothing after a silent click', () => {
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      orchestrator.handleClick(clickOn(item('1')));
+      orchestrator.handleClick(clickOn(item('2')));
+      announceSpy.mockClear();
+
+      orchestrator.handleClick(clickOn(item('2'), { shiftKey: true }));
+
+      expect(orchestrator.selectedIds()).toEqual(['2']);
+      expect(spoken()).toEqual([]);
+    });
+
+    // A plain click already opens the details pane, which is its own
+    // feedback; announcing the same count again on every click through the
+    // backlog would be noise.
+    it('stays silent on a plain click that swaps a one-card selection', () => {
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      orchestrator.handleClick(clickOn(item('1')));
+      announceSpy.mockClear();
+
+      orchestrator.handleClick(clickOn(item('2')));
+
+      expect(orchestrator.selectedIds()).toEqual(['2']);
+      expect(spoken()).toEqual([]);
+    });
+
+    it('still announces a plain click that changes the count', () => {
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      orchestrator.handleClick(clickOn(item('1')));
+      orchestrator.handleClick(clickOn(item('3'), { shiftKey: true }));
+      announceSpy.mockClear();
+
+      orchestrator.handleClick(clickOn(item('2')));
+
+      expect(spoken()).toEqual(['1 item selected.']);
+    });
+  });
+
   it('drops members that a morph removed from the document', () => {
     const orchestrator = new SelectionOrchestrator(hostFor(root));
     orchestrator.handleClick(clickOn(item('1')));
