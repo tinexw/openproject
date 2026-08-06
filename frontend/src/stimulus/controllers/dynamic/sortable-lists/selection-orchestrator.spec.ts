@@ -57,6 +57,10 @@ describe('SelectionOrchestrator', () => {
       announcementScope: 'js.sortable_lists.selection',
       descriptionId: 'selection-description',
       focusItem: (item) => { focused = item; },
+      ownerRowsContainer: (item) => {
+        const list = item.closest<HTMLElement>('[data-controller~="sortable-lists--list"]');
+        return list ? (list.querySelector<HTMLElement>(':scope > ul') ?? list) : null;
+      },
     };
   }
 
@@ -104,7 +108,7 @@ describe('SelectionOrchestrator', () => {
             selection: {
               cleared: 'Selection cleared.',
               not_selectable: 'Selection unchanged. This item cannot be selected.',
-              range_blocked: 'Selection unchanged. That range contains an item that cannot be moved.',
+              range_blocked: 'Selection unchanged. That range contains an item that takes no part in this list\'s ordering.',
               range_restarted: { one: 'Could not extend the range. 1 item selected.', other: 'Could not extend the range. %{count} items selected.' },
               range_unavailable: 'Selection unchanged. Expand this list to select that range.',
               selected: { one: '1 item selected.', other: '%{count} items selected.' },

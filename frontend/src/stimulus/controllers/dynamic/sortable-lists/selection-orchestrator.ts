@@ -60,6 +60,10 @@ export interface SelectionHost {
   // Routed rather than called directly so the consumer decides which element
   // inside a row actually holds the tab stop.
   focusItem(itemElement:HTMLElement):void;
+  // The rows container of the item's owning list. Asked of the host so that
+  // ranges and moves agree on what a list's rows are, rather than each
+  // deriving it.
+  ownerRowsContainer(itemElement:HTMLElement):HTMLElement|null;
 }
 
 /**
@@ -454,7 +458,12 @@ export class SelectionOrchestrator {
       return;
     }
 
-    const range = resolveRangeItems(this.host.rootElement, anchor, candidate);
+    const range = resolveRangeItems(
+      this.host.rootElement,
+      anchor,
+      candidate,
+      this.host.ownerRowsContainer(candidate.itemElement),
+    );
 
     if (range.ok) {
       this.selection.range(range.items);

@@ -85,15 +85,6 @@ function ownerList(root:HTMLElement, itemElement:HTMLElement):HTMLElement|null {
   return list && ownsElement(root, list) ? list : null;
 }
 
-// Rows sit inside a child rows container (mirrors the list controller's own
-// `rowsContainer` getter, `:scope > ul` with the list element as fallback). A
-// row is any direct child of that container, not necessarily an item element
-// itself: list-dom's contract lets a row wrap its item, so this must not be
-// derived from the item's own parent.
-function listRowsContainer(list:HTMLElement):HTMLElement {
-  return list.querySelector<HTMLElement>(':scope > ul') ?? list;
-}
-
 // The id of the item a row holds, whether the row is the item element or
 // merely contains it. Bounded by the rows container: resolveItemElement's
 // querySelector fallback descends unbounded, so a section row would otherwise
@@ -206,17 +197,21 @@ export function resolveRangeItems(
   root:HTMLElement,
   anchor:SelectionAnchor,
   candidate:SelectionCandidate,
+  // Supplied rather than derived here: the list controller already owns what
+  // counts as a rows container, and a second copy of that rule would be free
+  // to drift out of step with the one moves use. A row is any direct child of
+  // it, not necessarily an item element — list-dom's contract lets a row wrap
+  // its item — so it must not be derived from the item's own parent either.
+  rowsContainer:HTMLElement|null,
 ):RangeResolution {
   if (anchor.listKey !== candidate.listKey) {
     return { ok: false, reason: 'crossList' };
   }
 
-  const list = ownerList(root, candidate.itemElement);
-  if (!list) {
+  if (!ownerList(root, candidate.itemElement) || !rowsContainer) {
     return { ok: false, reason: 'unavailable' };
   }
 
-  const rowsContainer = listRowsContainer(list);
   const rows = Array.from(rowsContainer.children);
   const anchorRow = rows.find((row) => rowItemId(row, rowsContainer) === anchor.id);
   // Meaningful only because rowsContainer came from the list rather than from

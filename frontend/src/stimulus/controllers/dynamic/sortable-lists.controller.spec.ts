@@ -380,8 +380,8 @@ describe('Sortable lists controller', () => {
             },
             selection: {
               cleared: 'Selection cleared.',
-              not_selectable: 'Selection unchanged. This item cannot be selected because it cannot be moved.',
-              range_blocked: 'Selection unchanged. That range contains an item that cannot be moved.',
+              not_selectable: 'Selection unchanged. This item takes no part in this list\'s ordering.',
+              range_blocked: 'Selection unchanged. That range contains an item that takes no part in this list\'s ordering.',
               range_restarted: {
                 one: 'Could not extend the range. 1 item selected.',
                 other: 'Could not extend the range. %{count} items selected.',
@@ -1585,7 +1585,7 @@ describe('Sortable lists controller', () => {
 
     expect(items.filter(isSelected)).toEqual([items[0]]);
     expect(announcedMessages()).toEqual([
-      ['Selection unchanged. That range contains an item that cannot be moved.', { politeness: 'polite' }],
+      ['Selection unchanged. That range contains an item that takes no part in this list\'s ordering.', { politeness: 'polite' }],
     ]);
   });
 
@@ -1602,7 +1602,7 @@ describe('Sortable lists controller', () => {
     expect(items.filter(isSelected)).toEqual([items[0]]);
     expect(event.defaultPrevented).toBe(true);
     expect(announcedMessages()).toEqual([
-      ['Selection unchanged. This item cannot be selected because it cannot be moved.', { politeness: 'polite' }],
+      ['Selection unchanged. This item takes no part in this list\'s ordering.', { politeness: 'polite' }],
     ]);
   });
 

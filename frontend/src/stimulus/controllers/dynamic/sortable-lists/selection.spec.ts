@@ -75,6 +75,13 @@ describe('sortable-lists selection adapter', () => {
     root.remove();
   });
 
+  // The rows container the host resolves in production; supplied directly
+  // here because this spec drives the adapter without one.
+  const rowsContainerFor = (item:HTMLElement) => {
+    const list = item.closest<HTMLElement>('[data-controller~="sortable-lists--list"]');
+    return list ? (list.querySelector<HTMLElement>(':scope > ul') ?? list) : null;
+  };
+
   const itemFor = (id:string) => root.querySelector<HTMLElement>(`[data-sortable-lists--item-id-value="${id}"]`)!;
   const candidateFor = (id:string) => resolveCandidate(root, itemFor(id))!;
 
@@ -163,31 +170,31 @@ describe('sortable-lists selection adapter', () => {
   it('resolves an ascending range within one list', () => {
     const anchor = { type: 'work_package', id: '1', listKey: 'sprint:7' };
 
-    expect(resolveRangeItems(root, anchor, candidateFor('2'))).toEqual({ ok: true, items: [{ type: 'work_package', id: '1' }, { type: 'work_package', id: '2' }] });
+    expect(resolveRangeItems(root, anchor, candidateFor('2'), rowsContainerFor(itemFor('2')))).toEqual({ ok: true, items: [{ type: 'work_package', id: '1' }, { type: 'work_package', id: '2' }] });
   });
 
   it('resolves a descending range within one list', () => {
     const anchor = { type: 'work_package', id: '2', listKey: 'sprint:7' };
 
-    expect(resolveRangeItems(root, anchor, candidateFor('1'))).toEqual({ ok: true, items: [{ type: 'work_package', id: '1' }, { type: 'work_package', id: '2' }] });
+    expect(resolveRangeItems(root, anchor, candidateFor('1'), rowsContainerFor(itemFor('1')))).toEqual({ ok: true, items: [{ type: 'work_package', id: '1' }, { type: 'work_package', id: '2' }] });
   });
 
   it('rejects a range that would cross a truncation marker', () => {
     const anchor = { type: 'work_package', id: '2', listKey: 'sprint:7' };
 
-    expect(resolveRangeItems(root, anchor, candidateFor('3'))).toEqual({ ok: false, reason: 'unavailable' });
+    expect(resolveRangeItems(root, anchor, candidateFor('3'), rowsContainerFor(itemFor('3')))).toEqual({ ok: false, reason: 'unavailable' });
   });
 
   it('rejects a range that would cross a list boundary', () => {
     const anchor = { type: 'work_package', id: '3', listKey: 'sprint:7' };
 
-    expect(resolveRangeItems(root, anchor, candidateFor('4'))).toEqual({ ok: false, reason: 'crossList' });
+    expect(resolveRangeItems(root, anchor, candidateFor('4'), rowsContainerFor(itemFor('4')))).toEqual({ ok: false, reason: 'crossList' });
   });
 
   it('rejects a range whose anchor id was never a row in this list', () => {
     const anchor = { type: 'work_package', id: '99', listKey: 'sprint:7' };
 
-    expect(resolveRangeItems(root, anchor, candidateFor('2'))).toEqual({ ok: false, reason: 'unavailable' });
+    expect(resolveRangeItems(root, anchor, candidateFor('2'), rowsContainerFor(itemFor('2')))).toEqual({ ok: false, reason: 'unavailable' });
   });
 
   // Refused, not trimmed: a non-movable card in the span makes the whole
@@ -198,7 +205,7 @@ describe('sortable-lists selection adapter', () => {
   it('refuses a range that would include a non-movable card', () => {
     const anchor = { type: 'work_package', id: '4', listKey: 'sprint:8' };
 
-    expect(resolveRangeItems(root, anchor, candidateFor('5'))).toEqual({ ok: false, reason: 'locked' });
+    expect(resolveRangeItems(root, anchor, candidateFor('5'), rowsContainerFor(itemFor('5')))).toEqual({ ok: false, reason: 'locked' });
   });
 
   // list-dom's contract lets a row wrap its item instead of being it (see
@@ -227,7 +234,7 @@ describe('sortable-lists selection adapter', () => {
       const anchor = { type: 'work_package', id: '20', listKey: 'sprint:20' };
       const candidate = resolveCandidate(wrappingRoot, wrappedItemFor('22'))!;
 
-      expect(resolveRangeItems(wrappingRoot, anchor, candidate)).toEqual({ ok: true, items: [{ type: 'work_package', id: '20' }, { type: 'work_package', id: '21' }, { type: 'work_package', id: '22' }] });
+      expect(resolveRangeItems(wrappingRoot, anchor, candidate, rowsContainerFor(candidate.itemElement))).toEqual({ ok: true, items: [{ type: 'work_package', id: '20' }, { type: 'work_package', id: '21' }, { type: 'work_package', id: '22' }] });
     } finally {
       wrappingRoot.remove();
     }
@@ -248,7 +255,7 @@ describe('sortable-lists selection adapter', () => {
     const anchor = { type: 'work_package', id: '1', listKey: 'sprint:7' };
     const candidate = resolveCandidate(root, strayItem)!;
 
-    expect(resolveRangeItems(root, anchor, candidate)).toEqual({ ok: false, reason: 'unavailable' });
+    expect(resolveRangeItems(root, anchor, candidate, rowsContainerFor(candidate.itemElement))).toEqual({ ok: false, reason: 'unavailable' });
   });
 
   it('applies and clears the batch presentation', () => {
