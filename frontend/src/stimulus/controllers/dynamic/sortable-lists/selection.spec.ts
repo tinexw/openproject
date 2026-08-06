@@ -26,15 +26,17 @@
 // See COPYRIGHT and LICENSE files for more details.
 //++
 
+import { selectionKey } from 'core-common/batch-selection';
 import {
   applySelectionPresentation,
   batchSelectedAttribute,
   listBoundaryItem,
-  liveOrderableIds,
+  liveOrderableItems,
   neighbourItem,
-  orderedSelectedIds,
+  orderedItemElements,
+  orderedSelectedItems,
   resolveCandidate,
-  resolveRangeIds,
+  resolveRangeItems,
 } from './selection';
 
 describe('sortable-lists selection adapter', () => {
@@ -50,18 +52,18 @@ describe('sortable-lists selection adapter', () => {
            data-sortable-lists--list-type-value="sprint"
            data-sortable-lists--list-id-value="7">
         <ul>
-          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="1"><span>one</span></li>
-          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="2"></li>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="1" data-sortable-lists--item-type-value="work_package"><span>one</span></li>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="2" data-sortable-lists--item-type-value="work_package"></li>
           <li data-sortable-lists-prev-item-id="2" data-sortable-lists-omitted-count="9"></li>
-          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="3"></li>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="3" data-sortable-lists--item-type-value="work_package"></li>
         </ul>
       </div>
       <div data-controller="sortable-lists--list"
            data-sortable-lists--list-type-value="sprint"
            data-sortable-lists--list-id-value="8">
         <ul>
-          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="4"></li>
-          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="5"
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="4" data-sortable-lists--item-type-value="work_package"></li>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="5" data-sortable-lists--item-type-value="work_package"
               data-sortable-lists--item-mobility-value="fixed"></li>
         </ul>
       </div>
@@ -80,6 +82,7 @@ describe('sortable-lists selection adapter', () => {
     const candidate = resolveCandidate(root, itemFor('1').querySelector('span'));
 
     expect(candidate).toEqual({
+      type: 'work_package',
       itemElement: itemFor('1'),
       focusHost: itemFor('1'),
       id: '1',
@@ -114,42 +117,77 @@ describe('sortable-lists selection adapter', () => {
     expect(resolveCandidate(root, document.body)).toBeNull();
   });
 
-  it('orders selected ids by live document order across lists', () => {
-    expect(orderedSelectedIds(root, new Set(['4', '1', '3']))).toEqual(['1', '3', '4']);
+  // Type is half of identity, and an item that cannot be identified cannot
+  // be selected. Sharing one empty namespace would let unrelated consumers
+  // collide, which is the defect composite identity exists to remove.
+  it('refuses to resolve a candidate that declares no type', () => {
+    const untyped = document.createElement('li');
+    untyped.setAttribute('data-controller', 'sortable-lists--item');
+    untyped.setAttribute('data-sortable-lists--item-id-value', '99');
+    root.querySelector('ul')!.appendChild(untyped);
+
+    expect(resolveCandidate(root, untyped)).toBeNull();
   });
 
-  it('lists only live movable ids', () => {
-    expect([...liveOrderableIds(root)]).toEqual(['1', '2', '3', '4']);
+  // An independently nested root is an ownership boundary: the outer root
+  // must not reach past it, however deeply it contains its elements.
+  it('does not own items belonging to a nested root', () => {
+    const nested = document.createElement('div');
+    nested.setAttribute('data-controller', 'sortable-lists');
+    nested.innerHTML = `
+      <div data-controller="sortable-lists--list" data-sortable-lists--list-id-value="9">
+        <ul>
+          <li data-controller="sortable-lists--item"
+              data-sortable-lists--item-id-value="90"
+              data-sortable-lists--item-type-value="work_package"></li>
+        </ul>
+      </div>
+    `;
+    root.appendChild(nested);
+    const inner = nested.querySelector<HTMLElement>('[data-sortable-lists--item-id-value="90"]')!;
+
+    expect(resolveCandidate(root, inner)).toBeNull();
+    expect(orderedItemElements(root)).not.toContain(inner);
+  });
+
+  it('orders selected items by live document order across lists', () => {
+    const keys = new Set(['4', '1', '3'].map((id) => selectionKey({ type: 'work_package', id })));
+
+    expect(orderedSelectedItems(root, keys).map((item) => item.id)).toEqual(['1', '3', '4']);
+  });
+
+  it('lists only live orderable items', () => {
+    expect(liveOrderableItems(root).map((item) => item.id)).toEqual(['1', '2', '3', '4']);
   });
 
   it('resolves an ascending range within one list', () => {
-    const anchor = { id: '1', listKey: 'sprint:7' };
+    const anchor = { type: 'work_package', id: '1', listKey: 'sprint:7' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('2'))).toEqual({ ok: true, ids: ['1', '2'] });
+    expect(resolveRangeItems(root, anchor, candidateFor('2'))).toEqual({ ok: true, items: [{ type: 'work_package', id: '1' }, { type: 'work_package', id: '2' }] });
   });
 
   it('resolves a descending range within one list', () => {
-    const anchor = { id: '2', listKey: 'sprint:7' };
+    const anchor = { type: 'work_package', id: '2', listKey: 'sprint:7' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('1'))).toEqual({ ok: true, ids: ['1', '2'] });
+    expect(resolveRangeItems(root, anchor, candidateFor('1'))).toEqual({ ok: true, items: [{ type: 'work_package', id: '1' }, { type: 'work_package', id: '2' }] });
   });
 
   it('rejects a range that would cross a truncation marker', () => {
-    const anchor = { id: '2', listKey: 'sprint:7' };
+    const anchor = { type: 'work_package', id: '2', listKey: 'sprint:7' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('3'))).toEqual({ ok: false, reason: 'unavailable' });
+    expect(resolveRangeItems(root, anchor, candidateFor('3'))).toEqual({ ok: false, reason: 'unavailable' });
   });
 
   it('rejects a range that would cross a list boundary', () => {
-    const anchor = { id: '3', listKey: 'sprint:7' };
+    const anchor = { type: 'work_package', id: '3', listKey: 'sprint:7' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('4'))).toEqual({ ok: false, reason: 'crossList' });
+    expect(resolveRangeItems(root, anchor, candidateFor('4'))).toEqual({ ok: false, reason: 'crossList' });
   });
 
   it('rejects a range whose anchor id was never a row in this list', () => {
-    const anchor = { id: '99', listKey: 'sprint:7' };
+    const anchor = { type: 'work_package', id: '99', listKey: 'sprint:7' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('2'))).toEqual({ ok: false, reason: 'unavailable' });
+    expect(resolveRangeItems(root, anchor, candidateFor('2'))).toEqual({ ok: false, reason: 'unavailable' });
   });
 
   // Refused, not trimmed: a non-movable card in the span makes the whole
@@ -158,9 +196,9 @@ describe('sortable-lists selection adapter', () => {
   // cases above: a locked card is never resolved by expanding the list, so
   // callers need to tell the two reasons apart.
   it('refuses a range that would include a non-movable card', () => {
-    const anchor = { id: '4', listKey: 'sprint:8' };
+    const anchor = { type: 'work_package', id: '4', listKey: 'sprint:8' };
 
-    expect(resolveRangeIds(root, anchor, candidateFor('5'))).toEqual({ ok: false, reason: 'locked' });
+    expect(resolveRangeItems(root, anchor, candidateFor('5'))).toEqual({ ok: false, reason: 'locked' });
   });
 
   // list-dom's contract lets a row wrap its item instead of being it (see
@@ -174,9 +212,9 @@ describe('sortable-lists selection adapter', () => {
            data-sortable-lists--list-type-value="sprint"
            data-sortable-lists--list-id-value="20">
         <ul>
-          <li><div data-controller="sortable-lists--item" data-sortable-lists--item-id-value="20"></div></li>
-          <li><div data-controller="sortable-lists--item" data-sortable-lists--item-id-value="21"></div></li>
-          <li><div data-controller="sortable-lists--item" data-sortable-lists--item-id-value="22"></div></li>
+          <li><div data-controller="sortable-lists--item" data-sortable-lists--item-id-value="20" data-sortable-lists--item-type-value="work_package"></div></li>
+          <li><div data-controller="sortable-lists--item" data-sortable-lists--item-id-value="21" data-sortable-lists--item-type-value="work_package"></div></li>
+          <li><div data-controller="sortable-lists--item" data-sortable-lists--item-id-value="22" data-sortable-lists--item-type-value="work_package"></div></li>
         </ul>
       </div>
     `;
@@ -186,10 +224,10 @@ describe('sortable-lists selection adapter', () => {
       const wrappedItemFor = (id:string) => wrappingRoot.querySelector<HTMLElement>(
         `[data-sortable-lists--item-id-value="${id}"]`,
       )!;
-      const anchor = { id: '20', listKey: 'sprint:20' };
+      const anchor = { type: 'work_package', id: '20', listKey: 'sprint:20' };
       const candidate = resolveCandidate(wrappingRoot, wrappedItemFor('22'))!;
 
-      expect(resolveRangeIds(wrappingRoot, anchor, candidate)).toEqual({ ok: true, ids: ['20', '21', '22'] });
+      expect(resolveRangeItems(wrappingRoot, anchor, candidate)).toEqual({ ok: true, items: [{ type: 'work_package', id: '20' }, { type: 'work_package', id: '21' }, { type: 'work_package', id: '22' }] });
     } finally {
       wrappingRoot.remove();
     }
@@ -197,28 +235,29 @@ describe('sortable-lists selection adapter', () => {
 
   // The rows-container guard only does real work once the container comes
   // from the list rather than from the candidate's own parent (see
-  // resolveRangeIds): a candidate whose item lives outside the list's rows
+  // resolveRangeItems): a candidate whose item lives outside the list's rows
   // container has no row to find there.
   it('rejects a range when the candidate item sits outside the rows container', () => {
     const list = root.querySelector<HTMLElement>('[data-sortable-lists--list-id-value="7"]')!;
     const strayItem = document.createElement('div');
     strayItem.setAttribute('data-controller', 'sortable-lists--item');
     strayItem.setAttribute('data-sortable-lists--item-id-value', '30');
+    strayItem.setAttribute('data-sortable-lists--item-type-value', 'work_package');
     list.appendChild(strayItem);
 
-    const anchor = { id: '1', listKey: 'sprint:7' };
+    const anchor = { type: 'work_package', id: '1', listKey: 'sprint:7' };
     const candidate = resolveCandidate(root, strayItem)!;
 
-    expect(resolveRangeIds(root, anchor, candidate)).toEqual({ ok: false, reason: 'unavailable' });
+    expect(resolveRangeItems(root, anchor, candidate)).toEqual({ ok: false, reason: 'unavailable' });
   });
 
   it('applies and clears the batch presentation', () => {
-    applySelectionPresentation(root, new Set(['1', '3']), 'selected-description');
+    applySelectionPresentation(root, new Set([selectionKey({ type: 'work_package', id: '1' }), selectionKey({ type: 'work_package', id: '3' })]), 'selected-description');
 
     expect(itemFor('1').hasAttribute(batchSelectedAttribute)).toBe(true);
     expect(itemFor('2').hasAttribute(batchSelectedAttribute)).toBe(false);
 
-    applySelectionPresentation(root, new Set(['3']), 'selected-description');
+    applySelectionPresentation(root, new Set([selectionKey({ type: 'work_package', id: '3' })]), 'selected-description');
 
     expect(itemFor('1').hasAttribute(batchSelectedAttribute)).toBe(false);
     expect(itemFor('3').hasAttribute(batchSelectedAttribute)).toBe(true);
@@ -238,7 +277,7 @@ describe('sortable-lists selection adapter', () => {
     focusHost.setAttribute('data-sortable-lists--item-target', 'focus');
     itemFor('1').appendChild(focusHost);
 
-    applySelectionPresentation(root, new Set(['1']), 'selected-description');
+    applySelectionPresentation(root, new Set([selectionKey({ type: 'work_package', id: '1' })]), 'selected-description');
 
     expect(focusHost.getAttribute('aria-describedby')).toBe('selected-description');
     expect(itemFor('1').hasAttribute('aria-describedby')).toBe(false);
@@ -252,8 +291,8 @@ describe('sortable-lists selection adapter', () => {
   // here prunes duplicates on read, so a repeated apply is the only thing
   // that can catch a regression of the write-time de-duplication.
   it('does not accumulate duplicate description tokens on repeated apply', () => {
-    applySelectionPresentation(root, new Set(['1']), 'selected-description');
-    applySelectionPresentation(root, new Set(['1']), 'selected-description');
+    applySelectionPresentation(root, new Set([selectionKey({ type: 'work_package', id: '1' })]), 'selected-description');
+    applySelectionPresentation(root, new Set([selectionKey({ type: 'work_package', id: '1' })]), 'selected-description');
 
     expect(itemFor('1').getAttribute('aria-describedby')).toBe('selected-description');
   });
@@ -261,7 +300,7 @@ describe('sortable-lists selection adapter', () => {
   it('leaves a description the card already had', () => {
     itemFor('1').setAttribute('aria-describedby', 'card-hint');
 
-    applySelectionPresentation(root, new Set(['1']), 'selected-description');
+    applySelectionPresentation(root, new Set([selectionKey({ type: 'work_package', id: '1' })]), 'selected-description');
     expect(itemFor('1').getAttribute('aria-describedby')).toBe('card-hint selected-description');
 
     applySelectionPresentation(root, new Set(), 'selected-description');
@@ -269,7 +308,7 @@ describe('sortable-lists selection adapter', () => {
   });
 
   it('skips the description wiring when no description element is configured', () => {
-    applySelectionPresentation(root, new Set(['1']), '');
+    applySelectionPresentation(root, new Set([selectionKey({ type: 'work_package', id: '1' })]), '');
 
     expect(itemFor('1').hasAttribute('aria-describedby')).toBe(false);
     expect(itemFor('1').hasAttribute(batchSelectedAttribute)).toBe(true);

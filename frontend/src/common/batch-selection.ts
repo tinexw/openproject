@@ -27,13 +27,37 @@
 //++
 
 /**
- * The work package from which a contiguous batch range is measured.
+ * One selectable item's identity.
+ *
+ * Type as well as id, because ids are unique per source table rather than per
+ * root: a section and a custom field can both be id 5, and a nested list puts
+ * them under one root. Keying on the id alone would let one paint the other.
+ */
+export interface SelectionItem {
+  type:string;
+  id:string;
+}
+
+/** An opaque key for one item. Build it with {@link selectionKey}. */
+export type SelectionKey = string;
+
+// U+001F (unit separator) cannot appear in an HTML attribute value that
+// reached us through the DOM, so no type or id can forge a collision. Written
+// as an escape rather than a literal control character in source.
+const KEY_SEPARATOR = '\u001F';
+
+export function selectionKey({ type, id }:SelectionItem):SelectionKey {
+  return `${type}${KEY_SEPARATOR}${id}`;
+}
+
+/**
+ * The item from which a contiguous batch range is measured.
  *
  * `listKey` is opaque here: the model records which list a range may span
- * without learning what a list is. Its holder decides how to derive it.
+ * without learning what a list is. Its holder decides how to derive it, and
+ * rebinds it through {@link BatchSelection#rebindAnchor} when the item moves.
  */
-export interface SelectionAnchor {
-  id:string;
+export interface SelectionAnchor extends SelectionItem {
   listKey:string;
 }
 
@@ -45,13 +69,24 @@ export interface SelectionAnchor {
  * snapshot taken here would go stale the moment a morph reorders rows. Range
  * feasibility is likewise resolved outside — callers hand in an already
  * resolved range, or do not call `range` at all.
+ *
+ * Nor does it police whether the members agree on a type. Keeping a batch
+ * homogeneous is a policy about what an action means, which belongs to
+ * whoever interprets the gestures; identity is all this model owns.
  */
 export class BatchSelection {
-  private selectedIds = new Set<string>();
+  private selectedItems = new Map<SelectionKey, SelectionItem>();
   private selectionAnchor:SelectionAnchor|null = null;
 
-  get ids():ReadonlySet<string> {
-    return this.selectedIds;
+  // Keys, for membership tests and presentation matching.
+  get keys():ReadonlySet<SelectionKey> {
+    return new Set(this.selectedItems.keys());
+  }
+
+  // The pairs themselves, for callers that need the type back — projecting
+  // bare ids for a request, say.
+  items():SelectionItem[] {
+    return [...this.selectedItems.values()];
   }
 
   get anchor():SelectionAnchor|null {
@@ -59,34 +94,48 @@ export class BatchSelection {
   }
 
   get size():number {
-    return this.selectedIds.size;
+    return this.selectedItems.size;
   }
 
-  has(id:string):boolean {
-    return this.selectedIds.has(id);
+  has(item:SelectionItem):boolean {
+    return this.selectedItems.has(selectionKey(item));
   }
 
-  replace(id:string, listKey:string):void {
-    this.selectedIds = new Set([id]);
-    this.selectionAnchor = { id, listKey };
+  replace(item:SelectionItem, listKey:string):void {
+    this.selectedItems = new Map([[selectionKey(item), item]]);
+    this.selectionAnchor = { ...item, listKey };
   }
 
   // Re-bases the anchor even when the toggle deselects: the user's last
   // touched card is where they expect the next range to start from.
-  toggle(id:string, listKey:string):void {
-    if (this.selectedIds.has(id)) {
-      this.selectedIds.delete(id);
+  toggle(item:SelectionItem, listKey:string):void {
+    const key = selectionKey(item);
+
+    if (this.selectedItems.has(key)) {
+      this.selectedItems.delete(key);
     } else {
-      this.selectedIds.add(id);
+      this.selectedItems.set(key, item);
     }
 
-    this.selectionAnchor = { id, listKey };
+    this.selectionAnchor = { ...item, listKey };
   }
 
   // The anchor stays put so repeated Shift gestures resize one range rather
-  // than walking it across the list.
-  range(rangeIds:readonly string[]):void {
-    this.selectedIds = new Set(rangeIds);
+  // than walking it across the list. Takes resolved items rather than ids:
+  // the range resolver already holds the elements, and re-deriving the type
+  // here would mean this model knowing what an item element is.
+  range(rangeItems:readonly SelectionItem[]):void {
+    this.selectedItems = new Map(rangeItems.map((item) => [selectionKey(item), item]));
+  }
+
+  selectAll(items:readonly SelectionItem[], anchor:SelectionAnchor|null):void {
+    this.selectedItems = new Map(items.map((item) => [selectionKey(item), item]));
+    this.selectionAnchor = anchor;
+  }
+
+  clear():void {
+    this.selectedItems = new Map();
+    this.selectionAnchor = null;
   }
 
   /**
@@ -104,38 +153,28 @@ export class BatchSelection {
     }
   }
 
-  selectAll(ids:readonly string[], anchor:SelectionAnchor|null):void {
-    this.selectedIds = new Set(ids);
-    this.selectionAnchor = anchor;
-  }
-
-  clear():void {
-    this.selectedIds = new Set();
-    this.selectionAnchor = null;
-  }
-
   /**
    * Drops members and an anchor that no longer exist in the document.
    *
+   * `liveKeys` is keyed the same way membership is, so an id that survives
+   * under a *different* type does not keep a stale member alive.
+   *
    * @return whether membership or the anchor changed — a convenience for a
    *   caller that wants to skip redundant work when nothing did. The
-   *   current caller (SortableListsController's morph heal) does not use it
-   *   that way: it has to resync DOM presentation after every morph
-   *   regardless of whether the model changed, so it discards this value
-   *   and re-renders unconditionally. The signal is kept for a future
-   *   caller that can actually act on it.
+   *   current caller resyncs presentation after every morph regardless, so
+   *   it discards this; the signal is kept for one that can act on it.
    */
-  prune(liveIds:ReadonlySet<string>):boolean {
+  prune(liveKeys:ReadonlySet<SelectionKey>):boolean {
     let changed = false;
 
-    for (const id of this.selectedIds) {
-      if (!liveIds.has(id)) {
-        this.selectedIds.delete(id);
+    for (const key of [...this.selectedItems.keys()]) {
+      if (!liveKeys.has(key)) {
+        this.selectedItems.delete(key);
         changed = true;
       }
     }
 
-    if (this.selectionAnchor && !liveIds.has(this.selectionAnchor.id)) {
+    if (this.selectionAnchor && !liveKeys.has(selectionKey(this.selectionAnchor))) {
       this.selectionAnchor = null;
       changed = true;
     }

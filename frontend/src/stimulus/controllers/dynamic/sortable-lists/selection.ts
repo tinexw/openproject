@@ -26,10 +26,12 @@
 // See COPYRIGHT and LICENSE files for more details.
 //++
 
-import type { SelectionAnchor } from 'core-common/batch-selection';
+import { selectionKey, type SelectionAnchor, type SelectionItem, type SelectionKey } from 'core-common/batch-selection';
 import { attributeTokenList } from 'core-app/shared/helpers/dom-helpers';
 import {
   isOrderableItem,
+  resolveItemType,
+  sortableListsRootSelector,
   resolveItemElement,
   resolveItemId,
   rowOf,
@@ -42,14 +44,13 @@ import {
 // both, or neither.
 export const batchSelectedAttribute = 'data-batch-selected';
 
-export interface SelectionCandidate {
+export interface SelectionCandidate extends SelectionItem {
   itemElement:HTMLElement;
   // The element the consumer made focusable, which is also the boundary an
   // interactive-descendant check stops at: the host itself is allowed to be
   // focusable (Backlogs cards carry tabindex), while anything interactive
   // *inside* it keeps its own behaviour.
   focusHost:HTMLElement;
-  id:string;
   listKey:string;
   orderable:boolean;
 }
@@ -71,10 +72,17 @@ function listKeyOf(listElement:HTMLElement):string {
   return `${type}:${id}`;
 }
 
+// A child belongs to the nearest ancestor carrying the root controller, not
+// merely to any root that contains it: an independently nested root is an
+// ownership boundary, so an outer root must not reach past it.
+function ownsElement(root:HTMLElement, element:Element):boolean {
+  return element.closest(sortableListsRootSelector) === root;
+}
+
 function ownerList(root:HTMLElement, itemElement:HTMLElement):HTMLElement|null {
   const list = itemElement.closest<HTMLElement>(sortableListSelector);
 
-  return list && root.contains(list) ? list : null;
+  return list && ownsElement(root, list) ? list : null;
 }
 
 // Rows sit inside a child rows container (mirrors the list controller's own
@@ -97,7 +105,8 @@ function rowItemId(row:Element, rowsContainer:Element):string|null {
 }
 
 export function orderedItemElements(root:HTMLElement):HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(sortableItemSelector));
+  return Array.from(root.querySelectorAll<HTMLElement>(sortableItemSelector))
+    .filter((item) => ownsElement(root, item));
 }
 
 /**
@@ -123,7 +132,17 @@ export function resolveCandidate(root:HTMLElement, target:EventTarget|null):Sele
     return null;
   }
 
+  // Type is half of identity, so an item declaring none cannot be identified
+  // — and an item that cannot be identified cannot be selected. Sharing one
+  // empty namespace instead would let unrelated consumers collide, which is
+  // the defect composite identity exists to remove.
+  const type = resolveItemType(itemElement);
+  if (type === null) {
+    return null;
+  }
+
   return {
+    type,
     itemElement,
     focusHost: itemElement.querySelector<HTMLElement>(itemFocusTargetSelector) ?? itemElement,
     id,
@@ -134,23 +153,31 @@ export function resolveCandidate(root:HTMLElement, target:EventTarget|null):Sele
 
 // Live document order, resolved at action time rather than stored: a morph can
 // reorder rows underneath a selection that was formed minutes ago.
-export function orderedSelectedIds(root:HTMLElement, ids:ReadonlySet<string>):string[] {
+export function orderedSelectedItems(root:HTMLElement, keys:ReadonlySet<SelectionKey>):SelectionItem[] {
   return orderedItemElements(root)
-    .map((item) => resolveItemId(item))
-    .filter((id):id is string => id !== null && ids.has(id));
+    .map((item) => itemIdentity(item))
+    .filter((item):item is SelectionItem => item !== null && keys.has(selectionKey(item)));
 }
 
-export function liveOrderableIds(root:HTMLElement):Set<string> {
-  const ids = new Set<string>();
+// The identity of one item element, or null when it declares no type and so
+// has none.
+function itemIdentity(itemElement:Element):SelectionItem|null {
+  const id = resolveItemId(itemElement);
+  const type = resolveItemType(itemElement);
 
-  for (const item of orderedItemElements(root)) {
-    const id = resolveItemId(item);
-    if (id && isOrderableItem(item)) {
-      ids.add(id);
-    }
-  }
+  return id && type ? { type, id } : null;
+}
 
-  return ids;
+export function liveOrderableItems(root:HTMLElement):SelectionItem[] {
+  return orderedItemElements(root)
+    .filter(isOrderableItem)
+    .map((item) => itemIdentity(item))
+    .filter((item):item is SelectionItem => item !== null);
+}
+
+// The same set, keyed the way membership is, for pruning against.
+export function liveOrderableKeys(root:HTMLElement):Set<SelectionKey> {
+  return new Set(liveOrderableItems(root).map(selectionKey));
 }
 
 // Why a range could not be resolved. `crossList` covers the anchor and
@@ -164,7 +191,7 @@ export function liveOrderableIds(root:HTMLElement):Set<string> {
 export type RangeUnavailableReason = 'crossList'|'unavailable'|'locked';
 
 export type RangeResolution =
-  | { ok:true; ids:string[] }
+  | { ok:true; items:SelectionItem[] }
   | { ok:false; reason:RangeUnavailableReason };
 
 /**
@@ -175,7 +202,7 @@ export type RangeResolution =
  * a truncation marker, or a card the user may not move: silently selecting
  * something narrower than the user gestured at would be worse than refusing.
  */
-export function resolveRangeIds(
+export function resolveRangeItems(
   root:HTMLElement,
   anchor:SelectionAnchor,
   candidate:SelectionCandidate,
@@ -204,7 +231,7 @@ export function resolveRangeIds(
   const to = rows.indexOf(candidateRow);
   const span = rows.slice(Math.min(from, to), Math.max(from, to) + 1);
 
-  const ids:string[] = [];
+  const items:SelectionItem[] = [];
   for (const row of span) {
     const item = resolveItemElement(row, rowsContainer);
     const id = item ? resolveItemId(item) : null;
@@ -220,10 +247,15 @@ export function resolveRangeIds(
       return { ok: false, reason: 'locked' };
     }
 
-    ids.push(id);
+    const type = resolveItemType(item);
+    if (!type) {
+      return { ok: false, reason: 'unavailable' };
+    }
+
+    items.push({ type, id });
   }
 
-  return { ok: true, ids };
+  return { ok: true, items };
 }
 
 /**
@@ -244,14 +276,14 @@ export function resolveRangeIds(
  */
 export function applySelectionPresentation(
   root:HTMLElement,
-  ids:ReadonlySet<string>,
+  keys:ReadonlySet<SelectionKey>,
   describedById:string,
 ):void {
   for (const item of orderedItemElements(root)) {
-    const id = resolveItemId(item);
+    const identity = itemIdentity(item);
     const focusHost = item.querySelector<HTMLElement>(itemFocusTargetSelector) ?? item;
 
-    if (id && ids.has(id)) {
+    if (identity && keys.has(selectionKey(identity))) {
       item.setAttribute(batchSelectedAttribute, '');
       addDescription(focusHost, describedById);
     } else {

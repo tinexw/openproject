@@ -70,17 +70,25 @@ describe('SelectionOrchestrator', () => {
            data-sortable-lists--list-type-value="sprint"
            data-sortable-lists--list-id-value="7">
         <ul>
-          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="1"></li>
-          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="2"></li>
-          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="3"></li>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="1" data-sortable-lists--item-type-value="work_package"></li>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="2" data-sortable-lists--item-type-value="work_package"></li>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="3" data-sortable-lists--item-type-value="work_package"></li>
+        </ul>
+      </div>
+      <div data-controller="sortable-lists--list"
+           data-sortable-lists--list-type-value="section"
+           data-sortable-lists--list-id-value="sections">
+        <ul>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="1"
+              data-sortable-lists--item-type-value="section"></li>
         </ul>
       </div>
       <div data-controller="sortable-lists--list"
            data-sortable-lists--list-type-value="sprint"
            data-sortable-lists--list-id-value="8">
         <ul>
-          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="4"></li>
-          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="5"></li>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="4" data-sortable-lists--item-type-value="work_package"></li>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="5" data-sortable-lists--item-type-value="work_package"></li>
         </ul>
       </div>
     `;
@@ -122,7 +130,14 @@ describe('SelectionOrchestrator', () => {
     });
   }
 
-  const item = (id:string) => root.querySelector<HTMLElement>(`[data-sortable-lists--item-id-value="${id}"]`)!;
+  // Type-qualified, because the fixture deliberately holds a section and a
+  // work package that share id 1 — the collision a nested topology makes
+  // routine.
+  const itemOfType = (type:string, id:string) => root.querySelector<HTMLElement>(
+    `[data-sortable-lists--item-type-value="${type}"][data-sortable-lists--item-id-value="${id}"]`,
+  )!;
+  const item = (id:string) => itemOfType('work_package', id);
+  const sectionItem = (id:string) => itemOfType('section', id);
   const isSelected = (element:HTMLElement) => element.hasAttribute(batchSelectedAttribute);
   const clickOn = (element:HTMLElement, init:MouseEventInit = {}) => {
     const event = new MouseEvent('click', { bubbles: true, cancelable: true, ...init });
@@ -352,6 +367,72 @@ describe('SelectionOrchestrator', () => {
     orchestrator.handleClick(clickOn(item('4'), { shiftKey: true }));
 
     expect(orchestrator.selectedIds()).toEqual(['1', '4']);
+  });
+
+  describe('one batch, one item type', () => {
+    // Section 1 and work package 1 are different items that happen to share
+    // an id, which is what a nested topology makes routine.
+    it('does not paint an item of another type that shares an id', () => {
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+
+      orchestrator.handleClick(clickOn(item('1')));
+
+      expect(isSelected(item('1'))).toBe(true);
+      expect(isSelected(sectionItem('1'))).toBe(false);
+    });
+
+    // "All of these together" has no meaning across two kinds of thing, so a
+    // foreign type restarts the batch rather than joining it — the same
+    // answer a cross-list Shift already gives.
+    it('restarts the batch when Ctrl/Cmd-click lands on another type', () => {
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      orchestrator.handleClick(clickOn(item('1')));
+      orchestrator.handleClick(clickOn(item('2'), { metaKey: true }));
+
+      orchestrator.handleClick(clickOn(sectionItem('1'), { metaKey: true }));
+
+      expect(orchestrator.selectedIds()).toEqual(['1']);
+      expect(isSelected(sectionItem('1'))).toBe(true);
+      expect(isSelected(item('1'))).toBe(false);
+    });
+
+    it('restarts the batch when Space toggles another type', () => {
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      orchestrator.handleClick(clickOn(item('1')));
+
+      const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'target', { value: sectionItem('1') });
+      orchestrator.handleKeydown(event);
+
+      expect(isSelected(sectionItem('1'))).toBe(true);
+      expect(isSelected(item('1'))).toBe(false);
+    });
+
+    it('scopes select-all to the anchoring candidate type', () => {
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      const event = new KeyboardEvent('keydown', { key: 'a', metaKey: true, bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'target', { value: sectionItem('1') });
+
+      orchestrator.handleKeydown(event);
+
+      expect(orchestrator.selectedIds()).toEqual(['1']);
+      expect(isSelected(sectionItem('1'))).toBe(true);
+      expect(isSelected(item('2'))).toBe(false);
+    });
+
+    // A bare-id lookup would find the section first, since it appears
+    // earlier in document order, and rebind the anchor to the wrong list.
+    it('rebinds the anchor to its own type when an earlier item shares its id', () => {
+      const orchestrator = new SelectionOrchestrator(hostFor(root));
+      const moved = item('1');
+      orchestrator.handleClick(clickOn(moved));
+
+      root.querySelector('[data-sortable-lists--list-id-value="8"] ul')!.prepend(moved);
+      orchestrator.reconcile();
+      orchestrator.handleClick(clickOn(item('4'), { shiftKey: true }));
+
+      expect(orchestrator.selectedIds()).toEqual(['1', '4']);
+    });
   });
 
   it('drops members that a morph removed from the document', () => {

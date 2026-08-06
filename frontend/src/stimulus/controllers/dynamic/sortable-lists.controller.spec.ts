@@ -1346,7 +1346,7 @@ describe('Sortable lists controller', () => {
            data-sortable-lists-selection-enabled-value="true"
            data-sortable-lists-sortable-lists--item-outlet="#stale-root [data-controller~='sortable-lists--item']">
         <ul data-controller="sortable-lists--list" data-sortable-lists--list-type-value="sprint" data-sortable-lists--list-id-value="1">
-          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="1" data-batch-selected></li>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="1" data-sortable-lists--item-type-value="work_package" data-batch-selected></li>
         </ul>
       </div>
     `;

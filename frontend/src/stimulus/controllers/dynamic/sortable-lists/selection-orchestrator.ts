@@ -26,18 +26,19 @@
 // See COPYRIGHT and LICENSE files for more details.
 //++
 
-import { BatchSelection, type SelectionAnchor } from 'core-common/batch-selection';
+import { BatchSelection, type SelectionAnchor, type SelectionKey } from 'core-common/batch-selection';
 import { announce } from '@primer/live-region-element';
-import { resolveItemId } from './list-dom';
+import { resolveItemId, resolveItemType } from './list-dom';
 import {
   applySelectionPresentation,
   listBoundaryItem,
-  liveOrderableIds,
+  liveOrderableItems,
+  liveOrderableKeys,
   neighbourItem,
   orderedItemElements,
-  orderedSelectedIds,
+  orderedSelectedItems,
   resolveCandidate,
-  resolveRangeIds,
+  resolveRangeItems,
   type SelectionCandidate,
 } from './selection';
 import { closestInteractiveElement } from 'core-common/interactive-element-helper';
@@ -76,13 +77,13 @@ export class SelectionOrchestrator {
   // the silent ones. Comparing against the last *announced* membership would
   // drift: a silent navigation render in between leaves a stale baseline, so
   // the next genuine no-op would look like a change and speak.
-  private lastRenderedIds:ReadonlySet<string> = new Set();
+  private lastRenderedKeys:ReadonlySet<SelectionKey> = new Set();
 
   constructor(private readonly host:SelectionHost) {}
 
   // Live ordered membership, for AGILE-278's batch move.
   selectedIds():string[] {
-    return orderedSelectedIds(this.host.rootElement, this.selection.ids);
+    return orderedSelectedItems(this.host.rootElement, this.selection.keys).map((item) => item.id);
   }
 
   // A menu move relocates exactly one card, so it collapses the batch the
@@ -106,7 +107,7 @@ export class SelectionOrchestrator {
       return;
     }
 
-    this.selection.replace(candidate.id, candidate.listKey);
+    this.selection.replace({ type: candidate.type, id: candidate.id }, candidate.listKey);
     this.renderSelection('selection');
   }
 
@@ -144,7 +145,7 @@ export class SelectionOrchestrator {
       // the card only joins the batch when it is orderable, but a fixed
       // card must not be able to leave an unrelated batch selected behind it.
       if (candidate.orderable) {
-        this.selection.replace(candidate.id, candidate.listKey);
+        this.selection.replace({ type: candidate.type, id: candidate.id }, candidate.listKey);
         this.renderSelection('navigation');
       } else {
         this.selection.clear();
@@ -173,7 +174,7 @@ export class SelectionOrchestrator {
     if (event.shiftKey) {
       this.extendSelectionTo(candidate);
     } else {
-      this.selection.toggle(candidate.id, candidate.listKey);
+      this.toggleWithinCohort(candidate);
       this.renderSelection('selection');
     }
   };
@@ -258,7 +259,7 @@ export class SelectionOrchestrator {
     if (event.shiftKey) {
       this.extendSelectionTo(candidate);
     } else {
-      this.selection.toggle(candidate.id, candidate.listKey);
+      this.toggleWithinCohort(candidate);
       this.renderSelection('selection');
     }
   }
@@ -346,11 +347,15 @@ export class SelectionOrchestrator {
       return;
     }
 
-    const ids = [...liveOrderableIds(this.host.rootElement)];
+    // Scoped to the anchoring candidate's type: a batch holds one kind of
+    // thing, so "everything orderable" means everything of that kind.
+    const cohortType = candidate.orderable ? candidate.type : this.firstOrderableCandidate()?.type;
+    const items = liveOrderableItems(this.host.rootElement)
+      .filter((item) => item.type === cohortType);
     // Consumed only once there is something to select. Swallowing the key on
     // a page with nothing selectable would block the browser's own
     // select-all and announce nothing in its place.
-    if (ids.length === 0) {
+    if (items.length === 0) {
       return;
     }
 
@@ -361,10 +366,10 @@ export class SelectionOrchestrator {
     }
 
     const anchor:SelectionAnchor|null = candidate.orderable
-      ? { id: candidate.id, listKey: candidate.listKey }
+      ? { type: candidate.type, id: candidate.id, listKey: candidate.listKey }
       : this.firstOrderableCandidate();
 
-    this.selection.selectAll(ids, anchor);
+    this.selection.selectAll(items, anchor);
     this.renderSelection('selection');
   }
 
@@ -376,7 +381,7 @@ export class SelectionOrchestrator {
     for (const element of orderedItemElements(this.host.rootElement)) {
       const candidate = resolveCandidate(this.host.rootElement, element);
       if (candidate?.orderable) {
-        return { id: candidate.id, listKey: candidate.listKey };
+        return { type: candidate.type, id: candidate.id, listKey: candidate.listKey };
       }
     }
 
@@ -401,18 +406,58 @@ export class SelectionOrchestrator {
     this.renderSelection('selection');
   }
 
+  /**
+   * Whether a candidate belongs to the batch already being built.
+   *
+   * A batch holds one item type: "all of these together" has no meaning
+   * across two different kinds of thing, and AGILE-278's collection move
+   * sends one list of ids to one endpoint. This is orchestrator policy, not
+   * a rule of the model — identity namespacing and batch compatibility are
+   * different concerns, and a future consumer could legitimately act across
+   * types without the framework-agnostic model having to allow it.
+   */
+  private cohortMatches(candidate:SelectionCandidate):boolean {
+    const { anchor } = this.selection;
+
+    return anchor === null || anchor.type === candidate.type;
+  }
+
+  /**
+   * The single point where a candidate joins the batch by toggling.
+   *
+   * A candidate of a foreign type restarts onto itself rather than joining,
+   * which is the same answer a cross-list Shift already gives. Routing every
+   * adding gesture through here is what makes a mixed batch unreachable:
+   * checking only ranges and select-all would still let Ctrl/Cmd-click and
+   * Space build one.
+   */
+  private toggleWithinCohort(candidate:SelectionCandidate):void {
+    if (!this.cohortMatches(candidate)) {
+      this.renderRangeRestart(candidate);
+      return;
+    }
+
+    this.selection.toggle({ type: candidate.type, id: candidate.id }, candidate.listKey);
+    this.renderSelection('selection');
+  }
+
   private extendSelectionTo(candidate:SelectionCandidate):void {
     const { anchor } = this.selection;
+
+    if (anchor && !this.cohortMatches(candidate)) {
+      this.renderRangeRestart(candidate);
+      return;
+    }
 
     if (!anchor) {
       this.renderRangeRestart(candidate);
       return;
     }
 
-    const range = resolveRangeIds(this.host.rootElement, anchor, candidate);
+    const range = resolveRangeItems(this.host.rootElement, anchor, candidate);
 
     if (range.ok) {
-      this.selection.range(range.ids);
+      this.selection.range(range.items);
       this.renderSelection('selection');
       return;
     }
@@ -440,9 +485,9 @@ export class SelectionOrchestrator {
   // feedback at all, so this always speaks — and never with the plain count
   // sentence, which would not tell the user their range was not honoured.
   private renderRangeRestart(candidate:SelectionCandidate):void {
-    this.selection.replace(candidate.id, candidate.listKey);
+    this.selection.replace({ type: candidate.type, id: candidate.id }, candidate.listKey);
     this.syncSelectionPresentation();
-    this.lastRenderedIds = new Set(this.selection.ids);
+    this.lastRenderedKeys = this.selection.keys;
     this.announceSelection('range_restarted');
   }
 
@@ -463,11 +508,11 @@ export class SelectionOrchestrator {
    * different set of the same size changed something the user must hear.
    */
   private renderSelection(kind:'navigation'|'selection'):void {
-    const previous = this.lastRenderedIds;
+    const previous = this.lastRenderedKeys;
     this.syncSelectionPresentation();
 
-    const current = new Set(this.selection.ids);
-    this.lastRenderedIds = current;
+    const current = this.selection.keys;
+    this.lastRenderedKeys = current;
 
     const changed = kind === 'navigation'
       ? current.size !== previous.size
@@ -479,7 +524,7 @@ export class SelectionOrchestrator {
   }
 
   private syncSelectionPresentation():void {
-    applySelectionPresentation(this.host.rootElement, this.selection.ids, this.host.descriptionId);
+    applySelectionPresentation(this.host.rootElement, this.selection.keys, this.host.descriptionId);
   }
 
   private announceSelection(key:'selected'|'cleared'|'not_selectable'|'range_unavailable'|'range_blocked'|'range_restarted'):void {
@@ -497,7 +542,7 @@ export class SelectionOrchestrator {
   // morph can strip or preserve the marker attribute independently of the
   // model, so the DOM has to be brought back in line either way.
   reconcile():void {
-    this.selection.prune(liveOrderableIds(this.host.rootElement));
+    this.selection.prune(liveOrderableKeys(this.host.rootElement));
     this.rebindAnchorList();
     this.renderSelection('selection');
   }
@@ -513,8 +558,11 @@ export class SelectionOrchestrator {
       return;
     }
 
+    // Matched on type as well as id: ids are unique per source table, so a
+    // bare-id lookup can find an unrelated item of another type that happens
+    // to share the id — and rebind the anchor to that item's list.
     const element = orderedItemElements(this.host.rootElement)
-      .find((item) => resolveItemId(item) === anchor.id);
+      .find((item) => resolveItemId(item) === anchor.id && resolveItemType(item) === anchor.type);
     const candidate = element ? resolveCandidate(this.host.rootElement, element) : null;
 
     if (candidate) {
