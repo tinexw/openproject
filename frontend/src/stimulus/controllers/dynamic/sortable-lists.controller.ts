@@ -123,6 +123,7 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       // here does not depend on which controller connected first.
       this.element.addEventListener('click', this.onSelectionClick, true);
       this.element.addEventListener('keydown', this.onSelectionKeydown, true);
+      document.addEventListener('turbo:before-cache', this.clearSelectionForCache);
     }
   }
 
@@ -130,11 +131,23 @@ export default class SortableListsController extends Controller<HTMLElement> imp
     this.element.removeEventListener('turbo:morph-element', this.scheduleRegistrationHeal);
     this.element.removeEventListener('click', this.onSelectionClick, true);
     this.element.removeEventListener('keydown', this.onSelectionKeydown, true);
+    document.removeEventListener('turbo:before-cache', this.clearSelectionForCache);
     this.monitorCleanupFn?.();
     this.monitorCleanupFn = undefined;
     this.selection?.teardown();
     this.selection = undefined;
   }
+
+  // Turbo takes the cache snapshot before the visit replaces the body, which
+  // is what disconnects this controller — so a disconnect-time cleanup would
+  // run against a page that has already been cloned, and the restored
+  // snapshot would show rows painted as selected to a fresh orchestrator
+  // holding nothing. Only presentation goes: the model dies with the
+  // controller anyway. Same shape as
+  // admin/work-packages-identifier.controller.ts.
+  private readonly clearSelectionForCache = ():void => {
+    this.selection?.clearPresentation();
+  };
 
   private readonly onSelectionClick = (event:MouseEvent):void => {
     this.selection?.handleClick(event);

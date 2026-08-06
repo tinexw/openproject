@@ -1334,6 +1334,23 @@ describe('Sortable lists controller', () => {
 
   const isSelected = (element:HTMLElement) => element.hasAttribute('data-batch-selected');
 
+  // Turbo clones the page snapshot *before* the visit replaces the body, and
+  // it is that replacement which disconnects Stimulus controllers — so
+  // disconnect is too late to change what got cached. Assert the event
+  // itself: a disconnect-based implementation passes a weaker test while
+  // leaving the real leak in place.
+  it('clears selection presentation before Turbo caches the page', async () => {
+    const { items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    click(items[0]);
+    expect(isSelected(items[0])).toBe(true);
+
+    document.dispatchEvent(new CustomEvent('turbo:before-cache'));
+
+    expect(isSelected(items[0])).toBe(false);
+    expect(items[0].hasAttribute('aria-describedby')).toBe(false);
+  });
+
   it('selects only the clicked card on a plain click', async () => {
     const { items } = renderSelectableRoot();
     await ctx.nextFrame();
