@@ -315,6 +315,12 @@ export default class SortableListsController extends Controller<HTMLElement> imp
       return;
     }
 
+    // Last, after every resolution above has succeeded. Several of those
+    // steps bail — an unavailable direction, no owner list, no move URL —
+    // and collapsing earlier would destroy the batch for a menu action that
+    // then does nothing at all.
+    this.selection?.collapseForMove(itemElement);
+
     void this.performMove({
       sourceRow,
       rowsContainer: list.rowsContainer,

@@ -150,6 +150,21 @@ describe('SelectionOrchestrator', () => {
     expect(orchestrator.selectedIds()).toEqual(['1']);
   });
 
+  // Falling through mid-move would let the card's own click delay open the
+  // details pane on a card the batch was not allowed to follow, leaving the
+  // pane and the list disagreeing about what the user picked.
+  it('consumes a plain click while a move is in flight', () => {
+    const orchestrator = new SelectionOrchestrator(hostFor(root));
+    orchestrator.handleClick(clickOn(item('1')));
+    busy = true;
+
+    const event = clickOn(item('2'));
+    orchestrator.handleClick(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(orchestrator.selectedIds()).toEqual(['1']);
+  });
+
   it('drops members that a morph removed from the document', () => {
     const orchestrator = new SelectionOrchestrator(hostFor(root));
     orchestrator.handleClick(clickOn(item('1')));

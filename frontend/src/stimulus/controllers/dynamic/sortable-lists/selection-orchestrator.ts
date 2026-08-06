@@ -85,6 +85,13 @@ export class SelectionOrchestrator {
     return orderedSelectedIds(this.host.rootElement, this.selection.ids);
   }
 
+  // A menu move relocates exactly one card, so it collapses the batch the
+  // same way a drag does. Same rule, different surface: the two must not
+  // disagree about what a single-card move means for a wider selection.
+  collapseForMove(itemElement:HTMLElement):void {
+    this.collapseForDrag(itemElement);
+  }
+
   collapseForDrag(itemElement:HTMLElement):void {
     // Collapsing a wider selection onto the dragged card and selecting the
     // dragged card are different things; only the first is in scope here.
@@ -111,7 +118,13 @@ export class SelectionOrchestrator {
     }
 
     if (!modified) {
+      // Consumed before the busy check, like the modified branch below:
+      // falling through mid-move would let the card's own click delay open
+      // the details pane on a card the batch was not allowed to follow, so
+      // the pane and the list would disagree about what the user picked.
       if (this.host.busy) {
+        event.preventDefault();
+        event.stopPropagation();
         return;
       }
 

@@ -1351,6 +1351,39 @@ describe('Sortable lists controller', () => {
     expect(items[0].hasAttribute('aria-describedby')).toBe(false);
   });
 
+  // A menu move relocates exactly one card, so it collapses the batch the
+  // same way a drag does. Without this the menu path leaves a wider batch
+  // highlighted while one card moves, which reads as "all of these moved".
+  it('collapses the batch onto the card a menu move relocates', async () => {
+    const { root, items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    const controller = ctx.application.getControllerForElementAndIdentifier(root, 'sortable-lists') as SortableListsControllerType;
+    click(items[0]);
+    click(items[2], { shiftKey: true });
+    expect(items.filter(isSelected)).toHaveLength(3);
+
+    controller.moveInDirection(items[1], 'up');
+
+    expect(items.filter(isSelected)).toEqual([items[1]]);
+  });
+
+  // Several early returns sit between the busy guard and the move itself —
+  // no owner list, no id, an unavailable direction, no URL, no source row.
+  // Collapsing before those would destroy the batch for a menu action that
+  // then does nothing at all.
+  it('leaves the batch alone when a menu move resolves to nothing', async () => {
+    const { root, items } = renderSelectableRoot();
+    await ctx.nextFrame();
+    const controller = ctx.application.getControllerForElementAndIdentifier(root, 'sortable-lists') as SortableListsControllerType;
+    click(items[0]);
+    click(items[2], { shiftKey: true });
+
+    // Already the first card of its list, so 'up' resolves to undefined.
+    controller.moveInDirection(items[0], 'up');
+
+    expect(items.filter(isSelected)).toHaveLength(3);
+  });
+
   it('selects only the clicked card on a plain click', async () => {
     const { items } = renderSelectableRoot();
     await ctx.nextFrame();
