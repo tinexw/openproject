@@ -179,7 +179,7 @@ RSpec.describe "Backlogs batch selection", :js, :selenium, :settings_reset do
     # Root-wide, not list-scoped: the fixtures span a sprint and a bucket
     # precisely so a regression that only selects the focused card's own list
     # would leave this short of all six.
-    it "selects every movable card across the whole root with Ctrl/Cmd+A" do
+    it "selects every orderable card across the whole root with Ctrl/Cmd+A" do
       backlogs_page.send_work_package_card_keys(story1, [:control, "a"])
 
       expect(page).to have_css("[data-batch-selected]", count: 6)
@@ -253,6 +253,37 @@ RSpec.describe "Backlogs batch selection", :js, :selenium, :settings_reset do
       # The converse, without which the two above would pass just as happily if
       # every card were described whether selected or not.
       backlogs_page.expect_work_package_card_not_described(story3)
+    end
+  end
+
+  # Selection consumes Space, the arrows, Home/End and Ctrl/Cmd+A. On a page
+  # where the permission makes every card fixed that is pure loss: the keys
+  # would stop scrolling the page and announce a refusal for a capability the
+  # page never offers. The root does not opt in at all, so there is nothing
+  # attached to consume them.
+  describe "without the permission to manage sprint items" do
+    let(:view_role) do
+      create(:project_role, permissions: %i(view_sprints view_work_packages))
+    end
+
+    current_user do
+      create(:user, member_with_roles: { project => view_role })
+    end
+
+    # The outer `before` visits the page, and `current_user` declared here
+    # registers its login after that hook — so the first visit lands before
+    # this user exists. Visit again once they do.
+    before do
+      backlogs_page.visit!
+    end
+
+    it "does not enable selection, and leaves its gestures to the browser" do
+      backlogs_page.expect_batch_selection_disabled
+
+      backlogs_page.toggle_card(story1)
+      backlogs_page.send_work_package_card_keys(story2, [:space])
+
+      expect(page).to have_no_css("[data-batch-selected]")
     end
   end
 end

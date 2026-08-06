@@ -680,7 +680,7 @@ module Pages
 
     # Every row now carries `data-sortable-lists--item-id-value` regardless of
     # whether the user may move it (a fixed row still anchors a neighbour's
-    # drop), so the item id is no longer what distinguishes a movable row.
+    # drop), so the item id is no longer what distinguishes an orderable row.
     # `draggable` and the item's `mobility` value are set independently by the
     # component and read by separate consumers (the browser's native drag
     # start, and the item controller's own drag registration), so both are
@@ -749,6 +749,16 @@ module Pages
     # walking it, because the anchor never moves.
     def extend_selection_to(work_package)
       modified_click(work_package, :shift)
+    end
+
+    # The root advertises whether it opted into selection at all. Asserted
+    # directly because the absence of a batch proves nothing on its own: a
+    # root that opted in and simply refused every gesture looks identical
+    # from the outside, and the two differ in whether the browser still gets
+    # the keystroke.
+    def expect_batch_selection_disabled
+      expect(page).to have_css("[data-controller~='sortable-lists'][data-sortable-lists-selection-enabled-value='false']",
+                               visible: :all)
     end
 
     # Live batch membership, in document order.
