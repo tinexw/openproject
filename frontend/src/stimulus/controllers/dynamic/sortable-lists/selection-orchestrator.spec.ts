@@ -75,6 +75,14 @@ describe('SelectionOrchestrator', () => {
           <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="3"></li>
         </ul>
       </div>
+      <div data-controller="sortable-lists--list"
+           data-sortable-lists--list-type-value="sprint"
+           data-sortable-lists--list-id-value="8">
+        <ul>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="4"></li>
+          <li data-controller="sortable-lists--item" data-sortable-lists--item-id-value="5"></li>
+        </ul>
+      </div>
     `;
     document.body.append(root, document.createElement('live-region'));
     announceSpy = vi.spyOn(LiveRegionElement.prototype, 'announce');
@@ -276,7 +284,9 @@ describe('SelectionOrchestrator', () => {
       orchestrator.handleKeydown(event);
 
       expect(event.defaultPrevented).toBe(true);
-      expect(orchestrator.selectedIds()).toEqual(['1', '2', '3']);
+      // Root-wide, unlike a range: "everything orderable" has an unambiguous
+      // meaning across every list the root owns.
+      expect(orchestrator.selectedIds()).toEqual(['1', '2', '3', '4', '5']);
     });
 
     // Holding Space would otherwise toggle the card over and over, with a
@@ -327,6 +337,21 @@ describe('SelectionOrchestrator', () => {
 
       expect(orchestrator.selectedIds()).toEqual(['1', '2']);
     });
+  });
+
+  // collapseForDrag stamps the anchor at drag start, so a cross-list drop
+  // leaves it naming the source list. Without a rebind the next Shift in the
+  // destination reads as cross-list and restarts instead of extending.
+  it('extends a range after the anchored card moved to another list', () => {
+    const orchestrator = new SelectionOrchestrator(hostFor(root));
+    const moved = item('1');
+    orchestrator.handleClick(clickOn(moved));
+
+    root.querySelector('[data-sortable-lists--list-id-value="8"] ul')!.prepend(moved);
+    orchestrator.reconcile();
+    orchestrator.handleClick(clickOn(item('4'), { shiftKey: true }));
+
+    expect(orchestrator.selectedIds()).toEqual(['1', '4']);
   });
 
   it('drops members that a morph removed from the document', () => {

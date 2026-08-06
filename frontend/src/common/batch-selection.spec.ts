@@ -112,4 +112,24 @@ describe('BatchSelection', () => {
     expect(selection.has('1')).toBe(true);
     expect(selection.has('2')).toBe(false);
   });
+
+  describe('#rebindAnchor', () => {
+    // The anchor records where a range may span, and a card can be moved to
+    // another list while staying the anchor. Its holder re-derives the key
+    // and hands it back; the model stays opaque about what a list is.
+    it('points the anchor at a different list without disturbing membership', () => {
+      selection.replace('7', 'sprint:1');
+
+      selection.rebindAnchor('sprint:2');
+
+      expect(selection.anchor).toEqual({ id: '7', listKey: 'sprint:2' });
+      expect([...selection.ids]).toEqual(['7']);
+    });
+
+    it('does nothing when there is no anchor', () => {
+      selection.rebindAnchor('sprint:2');
+
+      expect(selection.anchor).toBeNull();
+    });
+  });
 });

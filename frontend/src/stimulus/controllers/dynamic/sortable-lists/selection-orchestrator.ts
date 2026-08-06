@@ -28,6 +28,7 @@
 
 import { BatchSelection, type SelectionAnchor } from 'core-common/batch-selection';
 import { announce } from '@primer/live-region-element';
+import { resolveItemId } from './list-dom';
 import {
   applySelectionPresentation,
   listBoundaryItem,
@@ -497,7 +498,28 @@ export class SelectionOrchestrator {
   // model, so the DOM has to be brought back in line either way.
   reconcile():void {
     this.selection.prune(liveOrderableIds(this.host.rootElement));
+    this.rebindAnchorList();
     this.renderSelection('selection');
+  }
+
+  // The anchor's list key is stamped when the anchor is set — for a drag,
+  // that is drag *start* — so a card dropped into another list leaves the
+  // key naming the list it came from, and the next Shift gesture there reads
+  // as cross-list and restarts the range instead of extending it. Runs after
+  // prune, so it only ever sees an anchor that still exists.
+  private rebindAnchorList():void {
+    const { anchor } = this.selection;
+    if (!anchor) {
+      return;
+    }
+
+    const element = orderedItemElements(this.host.rootElement)
+      .find((item) => resolveItemId(item) === anchor.id);
+    const candidate = element ? resolveCandidate(this.host.rootElement, element) : null;
+
+    if (candidate) {
+      this.selection.rebindAnchor(candidate.listKey);
+    }
   }
 
   // Removes presentation without touching the model. Whatever restores the

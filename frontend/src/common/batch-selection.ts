@@ -89,6 +89,21 @@ export class BatchSelection {
     this.selectedIds = new Set(rangeIds);
   }
 
+  /**
+   * Points the existing anchor at a different list.
+   *
+   * The anchor records where a range may span, and a card can be moved to
+   * another list while remaining the anchor — a cross-list drag does exactly
+   * that. Its holder re-derives the key from the live document and hands it
+   * back, so this model stays as opaque about what a list is as `replace`
+   * and `toggle` already are.
+   */
+  rebindAnchor(listKey:string):void {
+    if (this.selectionAnchor) {
+      this.selectionAnchor = { ...this.selectionAnchor, listKey };
+    }
+  }
+
   selectAll(ids:readonly string[], anchor:SelectionAnchor|null):void {
     this.selectedIds = new Set(ids);
     this.selectionAnchor = anchor;
