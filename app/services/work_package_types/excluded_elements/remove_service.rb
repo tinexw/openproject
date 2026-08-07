@@ -30,9 +30,9 @@
 
 module WorkPackageTypes
   module ExcludedElements
-    # Lets the type inherit the given elements again.
+    # Lets the variant inherit the given elements again.
     #
-    # Only this type's own link is narrowed, so an element still excluded by an ancestor's link
+    # Only this variant's own link is narrowed, so an element still excluded by an ancestor's link
     # stays hidden — the chain unions every link's exclusions.
     class RemoveService < BaseService
       protected

@@ -31,11 +31,9 @@
 module WorkPackageTypes
   class DetailsForm < ApplicationForm
     form do |details_form|
-      details_form.hidden(name: :parent_id) if carries_parent?
-
       details_form.text_field(
         name: :name,
-        value: model.own_name,
+        value: model.name,
         label: label(:name),
         input_width: :large,
         required: true,
@@ -66,9 +64,9 @@ module WorkPackageTypes
 
     private
 
-    def carries_parent? = model.new_record? && model.parent_id.present?
+    def carries_parent? = false
 
-    def inherited? = model.variant?
+    def inherited? = false
 
     def color_caption
       inherited? ? inherited_caption : I18n.t("types.edit.details.type_color_text")

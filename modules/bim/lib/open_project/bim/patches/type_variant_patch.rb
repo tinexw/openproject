@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 #-- copyright
 # OpenProject is an open source project management software.
 # Copyright (C) the OpenProject GmbH
@@ -28,28 +26,22 @@
 # See COPYRIGHT and LICENSE files for more details.
 #++
 
-module Types::Scopes
-  module WithEffectiveConfiguration
-    extend ActiveSupport::Concern
+##
+# We do not want the bcf_thumbnail to show up in the work package full view as we already have the BCF Viewpoint gallery
+# there. To achieve that we need to change how the default form configuration is set up. The default simply shall not
+# not include 'bcf_thumbnail'.
+#
+# Form configuration lives on TypeVariant, so this patches the including model rather than Type.
+module OpenProject::Bim::Patches::TypeVariantPatch
+  def self.included(base) # :nodoc:
+    base.prepend InstanceMethods
+  end
 
-    class_methods do
-      # Resolves each row's link chain for `aspect` in the same query, so iterating the
-      # result doesn't run Type::ConfigurationLinkable's recursive walk per record.
-      # Type#effective_source_id and Type#effective_excluded_elements pick the values up
-      # from the selected columns and fall back to their own query when absent.
-      #
-      # The columns are suffixed with the aspect on purpose: a row loaded for one aspect
-      # must not answer for another, and the suffix makes that a fallback rather than a
-      # wrong answer. Several aspects can therefore be preloaded in one query by chaining.
-      def with_effective_configuration(aspect)
-        aspect = validated_configuration_aspect(aspect)
-        join, source_id, excluded = effective_configuration_lateral("#{quoted_table_name}.id", aspect)
+  module InstanceMethods
+    private
 
-        joins(join)
-          .select("#{quoted_table_name}.*")
-          .select("#{source_id} AS effective_source_id_#{aspect}")
-          .select("#{excluded} AS effective_excluded_elements_#{aspect}")
-      end
+    def default_attribute?(active_cfs, key)
+      super && key != "bcf_thumbnail"
     end
   end
 end

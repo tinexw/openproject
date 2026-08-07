@@ -29,12 +29,16 @@
 #++
 
 class WorkPackageCustomField < CustomField
-  has_and_belongs_to_many :projects,
+  has_and_belongs_to_many :projects, # rubocop:disable Rails/HasAndBelongsToMany
                           join_table: "#{table_name_prefix}custom_fields_projects#{table_name_suffix}",
                           foreign_key: "custom_field_id"
-  has_and_belongs_to_many :types,
+  # Activation is per configuration, so the join names a variant rather than a type.
+  # Join table is still named custom_fields_types; converting to has_many :through would be a
+  # separate cleanup of that legacy table name.
+  has_and_belongs_to_many :type_variants, # rubocop:disable Rails/HasAndBelongsToMany
                           join_table: "#{table_name_prefix}custom_fields_types#{table_name_suffix}",
-                          foreign_key: "custom_field_id"
+                          foreign_key: "custom_field_id",
+                          association_foreign_key: "type_variant_id"
   has_many :work_packages,
            through: :custom_values,
            source: :customized,

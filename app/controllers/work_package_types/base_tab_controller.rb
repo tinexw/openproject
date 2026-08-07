@@ -34,11 +34,22 @@ module WorkPackageTypes
 
     before_action :require_admin
     before_action :find_type
+    before_action :find_variant
 
     private
 
     def find_type
-      @type = ::Type.find(params[:type_id])
+      @type = ::Type.find(params.expect(:type_id))
+    end
+
+    # Configuration tabs address one variant. A path without one edits the type's base
+    # variant, which is the configuration it uses where no other has been chosen.
+    def find_variant
+      @variant = if params[:variant_id].present?
+                   @type.variants.find(params.expect(:variant_id))
+                 else
+                   @type.default_variant
+                 end
     end
   end
 end

@@ -181,7 +181,7 @@ module ::TypesHelper
       key:,
       is_cf: CustomField.custom_field_attribute?(key),
       is_required: represented[:required] && !represented[:has_default],
-      translation: Type.translated_attribute_name(key, represented),
+      translation: TypeVariant.translated_attribute_name(key, represented),
       field_format_label: field_format_label(represented)
     }
   end

@@ -51,15 +51,11 @@ module Types
     private
 
     def parent_breadcrumb_item
-      return [] if @type.parent.nil?
-
-      [{ href: edit_type_details_path(type_id: @type.parent_id), text: @type.parent.name }]
+      []
     end
 
     def breadcrumb_leaf
-      return @type.own_name unless @type.variant?
-
-      t("types.edit.breadcrumb_variant", name: @type.own_name)
+      @type.name
     end
   end
 end

@@ -28,48 +28,28 @@
 # See COPYRIGHT and LICENSE files for more details.
 #++
 
-# TODO: Remove with type_variants feature flag
-class Workflows::Copies::FromTypesController < ApplicationController
-  include OpTurbo::ComponentStream
+module TypeVariants::Scopes
+  module WithEffectiveConfiguration
+    extend ActiveSupport::Concern
 
-  layout "admin"
+    class_methods do
+      # Resolves each row's link chain for `aspect` in the same query, so iterating the
+      # result doesn't run TypeVariant::ConfigurationLinkable's recursive walk per record.
+      # TypeVariant#effective_source_id and TypeVariant#effective_excluded_elements pick the values up
+      # from the selected columns and fall back to their own query when absent.
+      #
+      # The columns are suffixed with the aspect on purpose: a row loaded for one aspect
+      # must not answer for another, and the suffix makes that a fallback rather than a
+      # wrong answer. Several aspects can therefore be preloaded in one query by chaining.
+      def with_effective_configuration(aspect)
+        aspect = validated_configuration_aspect(aspect)
+        join, source_id, excluded = effective_configuration_lateral("#{quoted_table_name}.id", aspect)
 
-  before_action :require_admin
-
-  before_action :set_source_type
-  before_action :set_target_types
-
-  def create
-    if @source_type.nil?
-      render_flash_message_via_turbo_stream(
-        message: I18n.t(:error_workflow_copy_source),
-        scheme: :danger
-      )
-      @turbo_status = :unprocessable_entity
-    elsif @target_types.blank?
-      render_flash_message_via_turbo_stream(
-        message: I18n.t(:error_workflow_copy_target),
-        scheme: :danger
-      )
-      @turbo_status = :unprocessable_entity
-    else
-      Workflow.copy(@source_type, nil, @target_types, Workflow.eligible_roles)
-
-      redirect_to edit_type_workflow_path(@target_types.first),
-                  notice: t(".notice", count: @target_types.size, type_name: @target_types.first.name)
-      return
+        joins(join)
+          .select("#{quoted_table_name}.*")
+          .select("#{source_id} AS effective_source_id_#{aspect}")
+          .select("#{excluded} AS effective_excluded_elements_#{aspect}")
+      end
     end
-
-    respond_with_turbo_streams
-  end
-
-  private
-
-  def set_source_type
-    @source_type = ::Type.find_by(id: params[:type_id])
-  end
-
-  def set_target_types
-    @target_types = ::Type.where(id: params[:target_type_ids])
   end
 end

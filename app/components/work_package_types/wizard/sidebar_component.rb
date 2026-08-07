@@ -50,11 +50,11 @@ module WorkPackageTypes
       }.freeze
 
       ASPECTS = {
-        defaults: Type::ConfigurationLink::DEFAULTS,
-        form_configuration: Type::ConfigurationLink::FORM_CONFIGURATION,
-        project_attributes: Type::ConfigurationLink::PROJECT_ATTRIBUTES,
-        workflows: Type::ConfigurationLink::WORKFLOWS,
-        pdf: Type::ConfigurationLink::PDF_EXPORT
+        defaults: TypeVariant::DEFAULTS,
+        form_configuration: TypeVariant::FORM_CONFIGURATION,
+        project_attributes: TypeVariant::PROJECT_ATTRIBUTES,
+        workflows: TypeVariant::WORKFLOWS,
+        pdf: TypeVariant::PDF_EXPORT
       }.freeze
 
       private
@@ -72,18 +72,18 @@ module WorkPackageTypes
       def current?(step) = step == current_step
 
       # Steps ordered before the current one are considered done. Until the
-      # record is created (step 1) nothing is navigable or completed yet.
+      # type is created (step 1) nothing is navigable or completed yet.
       def completed?(step)
         type.persisted? && Steps.index(step) < Steps.index(current_step)
       end
 
       def linked?(step)
         aspect = ASPECTS[step]
-        aspect.present? && type.linked?(aspect)
+        aspect.present? && type.default_variant&.linked?(aspect)
       end
 
-      # Only visited/creatable steps are navigable: before the record exists we
-      # cannot address a step by its type id.
+      # Only visited/creatable steps are navigable: before the type exists we
+      # cannot address a step by its id.
       def href_for(step)
         type_creation_wizard_path(type, step:) if type.persisted?
       end

@@ -76,9 +76,7 @@ module WorkPackageTypes
 
     # The toggle is not rendered for a variant, so reaching this is a crafted request. Enabling a
     # variant everywhere would collide with every project already using its root or a sibling.
-    def reject_variant
-      render_404 if @type.variant?
-    end
+    def reject_variant; end
 
     # Written one project at a time through Projects::Types, rather than by assigning
     # Type#project_ids: a project uses the family's root and names the variant separately, so the
@@ -88,7 +86,7 @@ module WorkPackageTypes
     # taking over.
     def sync_projects(project_ids)
       desired_project_ids = Array(project_ids).compact_blank.map(&:to_i)
-      enabled_project_ids = @type.effective_in_projects.pluck(:id)
+      enabled_project_ids = @type.projects.pluck(:id)
 
       ServiceResult.success(result: @type).tap do |aggregated|
         apply(aggregated, ::Projects::Types::AddService, desired_project_ids - enabled_project_ids)
@@ -99,7 +97,7 @@ module WorkPackageTypes
     def apply(aggregated, service_class, project_ids)
       Project.where(id: project_ids).find_each do |project|
         aggregated.add_dependent!(
-          service_class.new(user: current_user, model: project).call(type: @type)
+          service_class.new(user: current_user, model: project).call(variant: @type.default_variant)
         )
       end
     end
@@ -134,10 +132,10 @@ module WorkPackageTypes
     end
 
     def deactivated_project_ids_with_work_packages(project_ids)
-      deactivated_project_ids = @type.effective_in_projects.pluck(:id) - Array(project_ids).compact_blank.map(&:to_i)
+      deactivated_project_ids = @type.projects.pluck(:id) - Array(project_ids).compact_blank.map(&:to_i)
 
       WorkPackage
-        .where(type_id: @type.root_id, project_id: deactivated_project_ids)
+        .where(type_id: @type.id, project_id: deactivated_project_ids)
         .distinct
         .pluck(:project_id)
     end

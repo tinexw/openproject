@@ -46,11 +46,7 @@ module WorkPackageTypes
       def type = model
 
       def title
-        if type.variant?
-          I18n.t("types.creation_wizard.create_variant")
-        else
-          I18n.t("types.creation_wizard.create_type")
-        end
+        I18n.t("types.creation_wizard.create_type")
       end
 
       def breadcrumb_items
@@ -64,9 +60,7 @@ module WorkPackageTypes
       end
 
       def parent_breadcrumb_item
-        return [] if type.parent.nil?
-
-        [{ href: edit_type_details_path(type_id: type.parent_id), text: type.parent.name }]
+        []
       end
 
       def cancel_href
@@ -90,7 +84,12 @@ module WorkPackageTypes
       # Editors whose fields belong to the wizard form itself, so that "Continue"
       # persists them when advancing to the next step.
       def step_editor
-        @step_editor ||= StepEditors.for(current_step, type)
+        @step_editor ||= StepEditors.for(current_step, editor_record)
+      end
+
+      # Identity (details) lives on the type; every other wizard step edits the base variant.
+      def editor_record
+        current_step == :details || type.new_record? ? type : type.default_variant
       end
 
       def step_form_options
@@ -124,20 +123,20 @@ module WorkPackageTypes
       def reuse_mode_banner
         return unless step_editor.linkable_aspect?
 
-        render(WorkPackageTypes::ReuseModeBannerComponent.new(type:, aspect: step_editor.aspect))
+        render(WorkPackageTypes::ReuseModeBannerComponent.new(variant: type.default_variant, aspect: step_editor.aspect))
       end
 
       # Editors that self-persist through their own turbo endpoints.
       def step_body
         case current_step
         when :form_configuration
-          FormConfigurationStepComponent.new(type:)
+          FormConfigurationStepComponent.new(variant: type.default_variant)
         when :project_attributes
-          ProjectAttributesStepComponent.new(type:)
+          ProjectAttributesStepComponent.new(variant: type.default_variant)
         when :projects
           WorkPackageTypes::ProjectsComponent.new(type, projects: Project.all)
         when :pdf
-          PdfStepComponent.new(type:)
+          PdfStepComponent.new(variant: type.default_variant)
         else
           PlaceholderComponent.new(step: current_step)
         end

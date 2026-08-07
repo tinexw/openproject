@@ -79,17 +79,19 @@ module Projects
     end
 
     def set_default_types(provided)
-      # TODO: should go through Projects::Types::AddService, which owns the family conflict
-      # rules and enables the types' work package custom fields.
+      # TODO: should go through Projects::Types::AddService, which owns the conflict rules
+      # and enables the types' work package custom fields.
       model.types = ::Type.default if !provided && model.types.empty?
     end
 
     def set_default_active_work_package_custom_fields(provided)
       return if provided
 
+      # A type contributes the fields its base variant shows: a project being given its types
+      # here has not chosen a variant for any of them.
       model.work_package_custom_fields = WorkPackageCustomField
-        .joins(:types)
-        .where(types: { id: model.type_ids })
+        .joins(:type_variants)
+        .where(type_variants: { type_id: model.type_ids, is_default_variant: true })
         .distinct
     end
 

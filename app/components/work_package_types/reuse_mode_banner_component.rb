@@ -29,15 +29,15 @@
 #++
 
 module WorkPackageTypes
-  # Banner above a type's configuration tab stating whether the aspect is
-  # configured Independently or Linked to a source type, with the actions to
+  # Banner above a variant's configuration tab stating whether the aspect is
+  # configured Independently or Linked to a source variant, with the actions to
   # switch between the two modes.
   class ReuseModeBannerComponent < ApplicationComponent
     include OpPrimer::ComponentHelpers
 
-    def initialize(type:, aspect:)
+    def initialize(variant:, aspect:)
       @aspect = aspect
-      super(type)
+      super(variant)
     end
 
     def render? = OpenProject::FeatureDecisions.type_variants_active?
@@ -46,23 +46,40 @@ module WorkPackageTypes
 
     attr_reader :aspect
 
-    def type = model
+    def variant = model
 
-    def linked? = type.linked?(aspect)
+    def linked? = variant.linked?(aspect)
 
-    def source = type.source_for(aspect)
+    def source = variant.source_for(aspect)
 
-    def source_is_parent? = source.present? && source == type.parent
+    # Named variants start life linked to their type's base variant; that is the
+    # "parent" the suffix calls out.
+    def source_is_parent? = source.present? && source == variant.type.default_variant
 
-    def source_path = edit_type_details_path(type_id: source.id)
+    def source_path
+      case aspect
+      when TypeVariant::DEFAULTS
+        edit_type_defaults_path(type_id: source.type_id, variant_id: source.id)
+      when TypeVariant::PDF_EXPORT
+        edit_type_pdf_export_template_index_path(type_id: source.type_id, variant_id: source.id)
+      when TypeVariant::PROJECT_ATTRIBUTES
+        edit_type_project_attributes_path(type_id: source.type_id, variant_id: source.id)
+      when TypeVariant::WORKFLOWS
+        edit_type_workflow_path(type_id: source.type_id, variant_id: source.id)
+      else
+        edit_type_form_configuration_path(type_id: source.type_id, variant_id: source.id)
+      end
+    end
 
     def copy_supported? = CopyConfiguration.supported?(aspect)
 
-    def copy_dialog_path = type_configuration_copy_dialog_path(type_id: type.id, aspect:)
+    def copy_dialog_path = type_configuration_copy_dialog_path(**dialog_path_args)
 
-    def link_dialog_path = type_configuration_link_dialog_path(type_id: type.id, aspect:)
+    def link_dialog_path = type_configuration_link_dialog_path(**dialog_path_args)
 
-    def independent_dialog_path = type_configuration_independence_dialog_path(type_id: type.id, aspect:)
+    def independent_dialog_path = type_configuration_independence_dialog_path(**dialog_path_args)
+
+    def dialog_path_args = { type_id: variant.type_id, variant_id: variant.id, aspect: }
 
     def linked_description
       helpers.link_translate(

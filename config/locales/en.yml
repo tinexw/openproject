@@ -247,6 +247,7 @@ en:
         project_creation_wizard_status_when_submitted: "Status when submitted"
         project_creation_wizard_work_package_comment: "Work package comment"
         project_creation_wizard_work_package_type: "Work package type"
+        project_types: "Types"
         public_value:
           false: "private"
           title: "Visibility"
@@ -286,6 +287,8 @@ en:
         start_gate_name: "Start phase gate name"
       project_custom_field:
         custom_field_section: Section
+      project_type:
+        variant: "Variant"
       query:
         child_work_packages: "Child work packages"
         column_names: "Columns"
@@ -353,18 +356,25 @@ en:
       token/named:
         token_name: "Token name"
       type:
-        attribute_groups: "Form configuration"
-        children: "Variants"
         color: "Color"
-        dependent_configuration_links: "Linked types"
-        description: "Default text for description"
         is_default: "Activated for new projects by default"
         is_in_roadmap: "Displayed in roadmap by default"
         is_milestone: "Is milestone"
-        parent: "Parent type"
-        patterns: "Patterns"
+        variants: "Variants"
       type/configuration_link:
         source: "Source type"
+      type_variant:
+        attribute_groups: "Form configuration"
+        default_work_package_description: "Default text for description"
+        defaults_source: "Defaults source"
+        form_configuration_source: "Form configuration source"
+        patterns: "Patterns"
+        pdf_export_source: "PDF export source"
+        project_attributes_source: "Project attributes source"
+        project_types: "Projects using this variant"
+        variant: "Variant"
+        variant_name: "Name"
+        workflows_source: "Workflows source"
       user:
         admin: "Administrator"
         auth_source: "Authentication source"
@@ -728,8 +738,6 @@ en:
               blank: "Please select a project."
         project_type:
           attributes:
-            type:
-              must_be_a_root_type: "must be a top-level type. A project uses roots and resolves a variant separately."
             variant:
               must_belong_to_the_type: "must be a variant of the type the project uses."
         queries/filters/base:
@@ -820,7 +828,7 @@ en:
               blank: "Please provide a token name"
               format: "%{message}"
               in_use: "This token name is already in use, please select a different one"
-        type:
+        type_variant:
           attributes:
             attribute_groups:
               attribute_unknown: "Invalid work package attribute used."
@@ -828,17 +836,19 @@ en:
               duplicate_group: "The group name '%{group}' is used more than once. Group names must be unique."
               group_without_name: "Group name can't be blank."
               query_invalid: "The embedded query '%{group}' is invalid: %{details}"
-            parent:
-              cannot_be_self: "can't be the type itself."
-              cannot_change_while_used_by_projects: "can't be changed while projects still use this type."
-              cannot_have_children: "can't be set because this type already has variants."
-              must_be_a_root: "must itself be a top-level type. Types can only be nested one level deep."
-              standard_type_must_be_root: "can't be set for the standard type."
+            defaults_source_id:
+              would_create_cycle: "would link these configurations in a loop."
+            form_configuration_source_id:
+              would_create_cycle: "would link these configurations in a loop."
             patterns:
               invalid_tokens: "One or more attributes inside the field are not valid. Please, fix the attributes before saving."
-        type/configuration_link:
-          attributes:
-            source_id:
+            pdf_export_source_id:
+              would_create_cycle: "would link these configurations in a loop."
+            project_attributes_source_id:
+              would_create_cycle: "would link these configurations in a loop."
+            variant:
+              must_belong_to_the_type: "must be a variant of this type."
+            workflows_source_id:
               would_create_cycle: "would link these configurations in a loop."
         user:
           attributes:
@@ -1021,6 +1031,9 @@ en:
       type:
         one: "Type"
         other: "Types"
+      type_variant:
+        one: "Variant"
+        other: "Variants"
       user: "User"
       version: "Version"
       wiki: "Wiki"
@@ -6295,7 +6308,6 @@ en:
       remove_default: "Do not activate in new projects"
       remove_default_notice: "%{name} is no longer activated in new projects."
       type_label: "Type"
-      variant_enabled_in_new_projects: "Variant %{name} active in new projects"
       variant_label: "Variant"
       variants_count:
         one: "1 variant"
@@ -6858,17 +6870,17 @@ en:
           label: "Source role"
         target_role_ids:
           label: "Target roles"
-        target_type_ids:
+        target_variant_ids:
           label: "Target types"
       from_roles:
         create:
           notice:
             one: "Successfully copied workflow to '%{role_name}' role."
             other: "Successfully copied workflow to %{count} roles."
-      from_types:
+      from_variants:
         create:
           notice:
-            one: "Successfully copied workflow to '%{type_name}' type."
+            one: "Successfully copied workflow to '%{type_name}'."
             other: "Successfully copied workflow to %{count} types."
       new:
         title: 'Copy workflow of "%{source_type}"'

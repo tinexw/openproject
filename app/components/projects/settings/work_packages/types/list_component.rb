@@ -32,8 +32,8 @@ module Projects
   module Settings
     module WorkPackages
       module Types
-        # Lists the type families active in a project: one row per family,
-        # naming the active variant behind the parent type it presents as.
+        # Lists the types active in a project: one row per type, naming the
+        # variant the project applies behind the type it configures.
         class ListComponent < ApplicationComponent
           include OpPrimer::ComponentHelpers
           include OpTurbo::Streamable
@@ -48,38 +48,43 @@ module Projects
 
           attr_reader :project
 
-          # One row per family. A project uses the root and resolves the variant
-          # separately, so the row is the join record rather than a single type.
+          # One row per type. A project stores the type and the variant it applies
+          # separately, so the row is the join record rather than a single record.
           def active_project_types
             @active_project_types ||= project
                                         .project_types
-                                        .includes(:variant, type: :color)
+                                        .includes(:variant, type: %i[color variants])
                                         .sort_by { |project_type| project_type.type.position }
           end
 
-          def switch_path(type)
-            new_project_settings_work_packages_type_switch_path(project, type)
+          # Nothing to switch to unless the type configures more than its base.
+          def switchable?(project_type)
+            project_type.type.variants.any? { |variant| variant.variant_name.present? }
           end
 
-          def switch_action(menu, type)
+          def switch_path(variant)
+            new_project_settings_work_packages_type_switch_path(project, variant)
+          end
+
+          def switch_action(menu, variant)
             menu.with_item(
               label: t("projects.settings.types.switch_type"),
-              href: switch_path(type),
+              href: switch_path(variant),
               content_arguments: { data: { controller: "async-dialog" } }
             ) do |item|
               item.with_leading_visual_icon(icon: "list-ordered")
             end
           end
 
-          def remove_path(type)
-            project_settings_work_packages_type_path(project, type)
+          def remove_path(variant)
+            project_settings_work_packages_type_path(project, variant)
           end
 
-          def remove_action(menu, type)
+          def remove_action(menu, variant)
             menu.with_item(
               label: t("projects.settings.types.remove_from_project"),
               scheme: :danger,
-              href: remove_path(type),
+              href: remove_path(variant),
               form_arguments: { method: :delete }
             ) do |item|
               item.with_leading_visual_icon(icon: :trash)

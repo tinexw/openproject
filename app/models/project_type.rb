@@ -31,26 +31,34 @@
 class ProjectType < ApplicationRecord
   belongs_to :project
   belongs_to :type
-  belongs_to :variant, class_name: "Type", optional: true
+  # The configuration in force for this type in this project. Always present: a project using
+  # a type without having chosen a variant uses that type's base variant.
+  belongs_to :variant, class_name: "TypeVariant", inverse_of: :project_types
+
+  # Using a type without naming a variant means using its base configuration, so the
+  # association writers (`project.types << type`) do not have to know about variants.
+  before_validation :default_to_base_variant
+  before_validation :ensure_type_from_variant
 
   validates :type_id, uniqueness: { scope: :project_id }
-  validate :type_is_a_root
+  # belongs_to is not required by default in this application, and the column is NOT NULL.
+  validates :variant, presence: true
   validate :variant_belongs_to_type
-
-  def effective_type
-    variant || type
-  end
 
   private
 
-  def type_is_a_root
-    return if type.nil? || !type.variant?
+  def default_to_base_variant
+    self.variant ||= type&.default_variant || type&.variants&.find(&:is_default_variant?)
+  end
 
-    errors.add(:type, :must_be_a_root_type)
+  # Keep type and variant aligned when the join row is built from either side.
+  def ensure_type_from_variant
+    self.type ||= variant&.type
   end
 
   def variant_belongs_to_type
-    return if variant.nil? || variant.parent_id == type_id
+    return if variant.nil? || type.nil?
+    return if variant.type == type
 
     errors.add(:variant, :must_belong_to_the_type)
   end

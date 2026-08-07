@@ -48,7 +48,7 @@ module WorkPackageTypes
     def show; end
 
     def new
-      @type = Type.new(parent_id: params[:parent_id])
+      @type = Type.new
       @current_step = Wizard::Steps.first
       render :show
     end
@@ -95,12 +95,13 @@ module WorkPackageTypes
     # A Linked aspect renders read-only and submits nothing, so there is nothing to
     # persist and the values on screen belong to the source type.
     def update_defaults
-      return advance if @type.linked?(Type::ConfigurationLink::DEFAULTS)
+      return advance if @type.default_variant.linked?(TypeVariant::DEFAULTS)
 
       service_call = WorkPackageTypes::UpdateService
-                       .new(user: current_user, model: @type, contract_class: WorkPackageTypes::UpdateDefaultsContract)
+                       .new(user: current_user, model: @type.default_variant,
+                            contract_class: WorkPackageTypes::UpdateDefaultsContract)
                        .call(patterns: Forms::DefaultsFormModel.to_patterns(defaults_params),
-                             description: defaults_params[:description])
+                             default_work_package_description: defaults_params[:default_work_package_description])
 
       if service_call.success?
         advance
@@ -111,15 +112,15 @@ module WorkPackageTypes
 
     # The matrix submits its inputs with the wizard form, along with the roles and
     # transition tab it was showing, so that only that slice is rewritten.
-    def update_workflows
+    def update_workflows # rubocop:disable Metrics/AbcSize
       matrix_context = ::Workflows::MatrixContext.new(
-        type: @type,
+        variant: @type.default_variant,
         tab: params[:tab],
         role_ids: params[:role_ids]
       )
 
       service_call = ::Workflows::MatrixUpdateService
-                       .new(type: @type, roles: matrix_context.roles, tab: matrix_context.tab)
+                       .new(variant: @type.default_variant, roles: matrix_context.roles, tab: matrix_context.tab)
                        .call(status: params[:status], indeterminate_status: params[:indeterminate_status])
 
       if service_call.success?
@@ -149,15 +150,15 @@ module WorkPackageTypes
       @current_step = Wizard::Steps.for_key(params[:step]) || Wizard::Steps.first
     end
 
-    # The core settings are only editable while creating a root type; a variant
-    # renders them disabled, so the browser never submits them.
+    # The wizard creates a type, which is identity only. Its configuration lands on the base
+    # variant the type creates for itself.
     def details_params
-      params.expect(type: %i[name parent_id color_id is_milestone is_in_roadmap])
+      params.expect(type: %i[name color_id is_milestone is_in_roadmap])
     end
 
     def defaults_params
       @defaults_params ||= params.expect(
-        work_package_types_forms_defaults_form_model: %i[subject_configuration pattern description]
+        work_package_types_forms_defaults_form_model: %i[subject_configuration pattern default_work_package_description]
       ).to_h
     end
   end
