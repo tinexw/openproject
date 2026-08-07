@@ -26,7 +26,9 @@
 // See COPYRIGHT and LICENSE files for more details.
 //++
 
-import { ChangeDetectionStrategy, Component, Input, SimpleChanges, OnChanges, inject } from '@angular/core';
+import {
+  AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, Input, OnChanges, OnDestroy, SimpleChanges, ViewChild, inject,
+} from '@angular/core';
 import { WorkPackageTableConfiguration } from 'core-app/features/work-packages/components/wp-table/wp-table-configuration';
 import { ChartOptions } from 'chart.js';
 import { I18nService } from 'core-app/core/i18n/i18n.service';
@@ -62,8 +64,16 @@ interface ChartDataSet {
   // eslint-disable-next-line @angular-eslint/prefer-on-push-component-change-detection
   changeDetection: ChangeDetectionStrategy.Eager,
 })
-export class WorkPackageEmbeddedGraphComponent implements OnChanges {
+export class WorkPackageEmbeddedGraphComponent implements OnChanges, AfterViewInit, OnDestroy {
   readonly i18n = inject(I18nService);
+
+  @ViewChild(BaseChartDirective) private chartDirective?:BaseChartDirective;
+
+  @ViewChild('graphContainer') private graphContainer?:ElementRef<HTMLElement>;
+
+  private resizeObserver?:ResizeObserver;
+
+  private resizeUpdateTimeout?:ReturnType<typeof setTimeout>;
 
   @Input() public datasets:WorkPackageEmbeddedGraphDataset[];
 
@@ -100,6 +110,39 @@ export class WorkPackageEmbeddedGraphComponent implements OnChanges {
     } else if (changes.chartType) {
       this.setChartOptions();
     }
+  }
+
+  ngAfterViewInit() {
+    // The chart's container can still be resized shortly after the chart is first
+    // drawn (e.g. by surrounding widget/grid layout settling). Chart.js own
+    // resize handling can redraw the chart before chartjs-plugin-datalabels has
+    // finished (re-)initializing its per-chart state, which throws
+    // (`chart[EXPANDO_KEY] is undefined` in afterDatasetsDraw). Forcing an
+    // explicit, debounced full update() once the container size settles works
+    // around that.
+    this.resizeObserver = new ResizeObserver(() => this.scheduleChartUpdate());
+
+    if (this.graphContainer) {
+      this.resizeObserver.observe(this.graphContainer.nativeElement);
+    }
+  }
+
+  ngOnDestroy() {
+    this.resizeObserver?.disconnect();
+
+    if (this.resizeUpdateTimeout) {
+      clearTimeout(this.resizeUpdateTimeout);
+    }
+  }
+
+  private scheduleChartUpdate() {
+    if (this.resizeUpdateTimeout) {
+      clearTimeout(this.resizeUpdateTimeout);
+    }
+
+    this.resizeUpdateTimeout = setTimeout(() => {
+      this.chartDirective?.chart?.update();
+    }, 50);
   }
 
   private updateChartData() {
