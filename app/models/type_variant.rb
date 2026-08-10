@@ -44,6 +44,11 @@ class TypeVariant < ApplicationRecord
     PROJECT_ATTRIBUTES = "project_attributes"
   ].freeze
 
+  # The aspects a variant can narrow rather than only inherit whole. Form configuration drops
+  # attributes and embedded queries; project attributes drops custom fields. The others are
+  # single values, so there is no list to take anything out of — and no exclusions column.
+  EXCLUDABLE_ASPECTS = [FORM_CONFIGURATION, PROJECT_ATTRIBUTES].freeze
+
   include ::Scopes::Scoped
   include ::Type::Attributes
   include ::Type::AttributeGroups
