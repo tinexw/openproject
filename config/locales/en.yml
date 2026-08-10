@@ -360,6 +360,7 @@ en:
         is_default: "Activated for new projects by default"
         is_in_roadmap: "Displayed in roadmap by default"
         is_milestone: "Is milestone"
+        project_types: "Projects"
         variants: "Variants"
       type/configuration_link:
         source: "Source type"

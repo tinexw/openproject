@@ -41,7 +41,7 @@ RSpec.describe WorkPackages::Exports::Generate::ModalDialogComponent, type: :com
       source = create(:type)
       source.pdf_export_templates.disable_all
       source.save!
-      type.link!(Type::ConfigurationLink::PDF_EXPORT, source:)
+      link_configuration(type, source:, aspect: TypeVariant::PDF_EXPORT)
 
       expect(component.templates_options).to be_empty
     end

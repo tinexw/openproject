@@ -43,17 +43,17 @@ RSpec.describe "API v3 form configuration exclusions", content_type: :json,
   shared_let(:excluded_field) { create(:issue_custom_field, :integer, name: "Excluded", is_for_all: true) }
   shared_let(:solo_field) { create(:issue_custom_field, :integer, name: "Solo", is_for_all: true) }
 
-  let(:aspect) { Type::ConfigurationLink::FORM_CONFIGURATION }
+  let(:aspect) { TypeVariant::FORM_CONFIGURATION }
   let(:current_user) { create(:admin) }
 
   let(:owner) do
-    create(:type).tap do |type|
-      type.attribute_groups = [
+    create(:type).default_variant.tap do |variant|
+      variant.attribute_groups = [
         ["Numbers", [kept_field.attribute_name, excluded_field.attribute_name]],
         ["Solo", [solo_field.attribute_name]]
       ]
-      type.custom_field_ids = [kept_field.id, excluded_field.id, solo_field.id]
-      type.save!
+      variant.custom_field_ids = [kept_field.id, excluded_field.id, solo_field.id]
+      variant.save!
     end
   end
 
@@ -70,8 +70,7 @@ RSpec.describe "API v3 form configuration exclusions", content_type: :json,
   end
 
   let!(:link) do
-    create(:type_configuration_link, type: leaf, source: owner, aspect:,
-                                     excluded_elements: [excluded_field.attribute_name,
+    link_configuration(leaf, source: owner, aspect: aspect, excluded: [excluded_field.attribute_name,
                                                          solo_field.attribute_name])
   end
 

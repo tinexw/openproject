@@ -30,40 +30,67 @@
 
 require "spec_helper"
 
-RSpec.describe Workflows::Copies::FromRolesController do
+RSpec.describe Workflows::Copies::FromVariantsController do
   shared_let(:admin) { create(:admin) }
   shared_let(:source_type) { create(:type, name: "Bug") }
-  shared_let(:roles) { create_list(:project_role, 2) }
+  shared_let(:source_variant) { create(:type_variant, type: source_type, variant_name: "Mobile") }
+  shared_let(:target_variants) { create_list(:type_variant, 2) }
 
   current_user { admin }
 
   describe "#create" do
-    let(:source_variant) { source_type.default_variant }
-    let(:source_role) { roles.first }
-    let(:target_roles) { roles }
+    let(:target_variant_ids) { target_variants.map { |variant| variant.id.to_s } }
 
     before do
       allow(Workflow).to receive(:copy)
 
       post :create, params: {
         type_id: source_type.id.to_s,
-        source_role_id: source_role.id.to_s,
-        target_role_ids: target_roles.map { |role| role.id.to_s }
+        variant_id: source_variant.id.to_s,
+        target_variant_ids:
       }, format: :turbo_stream
     end
 
-    it "copies from the source variant onto itself for every target role" do
-      expect(Workflow).to have_received(:copy).exactly(1).time
+    it "copies from the source variant onto every target, for the eligible roles" do
       expect(Workflow)
         .to have_received(:copy)
-              .with(source_variant, source_role, [source_variant], a_collection_containing_exactly(*target_roles))
+              .with(source_variant, nil, a_collection_containing_exactly(*target_variants), Workflow.eligible_roles)
     end
 
-    it "points the matrix frame at the target roles with a flash notice" do
-      expect(response).to have_http_status(:ok)
-      expect(response).to have_turbo_stream(action: "flash", target: "op-primer-flash-component")
-      expect(response.body).to include("Successfully copied workflow to #{target_roles.size} roles.")
-      expect(response).to have_turbo_stream(action: "turbo_frame_set_src", target: "workflow-table")
+    it "redirects to the first target's workflow tab with a flash notice" do
+      target = target_variants.first
+
+      expect(response)
+        .to redirect_to(edit_type_workflow_path(type_id: target.type_id, variant_id: target.id))
+      expect(flash[:notice]).to eq("Successfully copied workflow to 2 types.")
+    end
+  end
+
+  context "without a source variant" do
+    before do
+      post :create, params: {
+        type_id: source_type.id.to_s,
+        variant_id: "0",
+        target_variant_ids: target_variants.map { |variant| variant.id.to_s }
+      }, format: :turbo_stream
+    end
+
+    it "refuses the copy" do
+      expect(response).to have_http_status(:unprocessable_entity)
+    end
+  end
+
+  context "without any target" do
+    before do
+      post :create, params: {
+        type_id: source_type.id.to_s,
+        variant_id: source_variant.id.to_s,
+        target_variant_ids: []
+      }, format: :turbo_stream
+    end
+
+    it "refuses the copy" do
+      expect(response).to have_http_status(:unprocessable_entity)
     end
   end
 end

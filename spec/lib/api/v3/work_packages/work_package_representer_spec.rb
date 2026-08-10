@@ -556,16 +556,6 @@ RSpec.describe API::V3::WorkPackages::WorkPackageRepresenter do
         let(:href) { "/api/v3/types/#{work_package.type_id}" }
         let(:title) { work_package.type.name }
       end
-
-      context "for a variant" do
-        let(:type) { build_stubbed(:type, name: "Bug", parent: build_stubbed(:type, name: "Task")) }
-
-        it_behaves_like "has a titled link" do
-          let(:link) { "type" }
-          let(:href) { "/api/v3/types/#{work_package.type_id}" }
-          let(:title) { "Task" }
-        end
-      end
     end
 
     describe "author" do

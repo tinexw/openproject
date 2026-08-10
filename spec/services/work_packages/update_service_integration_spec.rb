@@ -446,16 +446,14 @@ RSpec.describe WorkPackages::UpdateService, "integration", type: :model do
   describe "changing the type when the project resolves it to a variant",
            with_flag: { type_variants: true } do
     shared_let(:family_root) { create(:type, name: "Family root") }
-    shared_let(:variant) { create(:type, name: "Variant", parent: family_root) }
+    shared_let(:variant) { create(:type_variant, type: family_root, variant_name: "Variant") }
     shared_let(:root_only_status) { create(:status, name: "root_only_status") }
 
     let(:work_package) { create(:work_package, subject: "work_package", status: root_only_status) }
     let(:attributes) { { type: family_root } }
 
     before do
-      variant.configuration_links
-             .find_by(aspect: Type::ConfigurationLink::WORKFLOWS)
-             .destroy!
+      unlink_configuration(variant, aspect: TypeVariant::WORKFLOWS)
 
       create(:workflow, type: family_root, role:,
                         old_status_id: root_only_status.id, new_status_id: root_only_status.id)
@@ -1836,7 +1834,7 @@ RSpec.describe WorkPackages::UpdateService, "integration", type: :model do
           with_flag: { type_variants: true } do
     shared_let(:linked_type) do
       create(:type, name: "Linked").tap do |t|
-        t.link!(Type::ConfigurationLink::DEFAULTS, source: autosubject_type)
+        link_configuration(t, source: autosubject_type, aspect: TypeVariant::DEFAULTS)
         project.types << t
       end
     end

@@ -58,14 +58,15 @@ module WorkPackageTypes
     end
 
     it "defaults to the UpdateDetailsContract" do
-      params = { patterns: { subject: { blueprint: "{{author}}", enabled: true } } }
-
-      result = service.call(params)
-      expect(result).to be_failure
-      expect(result.errors.full_messages).to be_present
+      # Patterns live on TypeVariant and need UpdateDefaultsContract. Assigned on a Type
+      # through the default contract they are unknown attributes.
+      expect do
+        service.call(patterns: { subject: { blueprint: "{{author}}", enabled: true } })
+      end.to raise_error(ActiveModel::UnknownAttributeError, /patterns/)
     end
 
     context "when updating attribute groups" do
+      let(:model) { create(:type, name: "Types-R-Us").default_variant }
       let(:contract_class) { UpdateFormConfigurationContract }
       let(:params) do
         { attribute_groups: [
@@ -116,7 +117,8 @@ module WorkPackageTypes
       end
     end
 
-    describe "custom field handling" do
+    describe "custom field handling", with_ee: %i[edit_attribute_groups] do
+      let(:model) { create(:type, name: "Types-R-Us").default_variant }
       let(:contract_class) { UpdateFormConfigurationContract }
       let(:params) do
         { attribute_groups: [
@@ -126,6 +128,8 @@ module WorkPackageTypes
         ] }
       end
 
+      subject(:service) { described_class.new(user:, model:, contract_class:) }
+
       it "enables the custom fields" do
         service.call(params)
 
@@ -133,11 +137,11 @@ module WorkPackageTypes
       end
 
       context "when a project already uses the type" do
-        before { type.projects = create_list(:project, 2) }
+        before { type.type.projects = create_list(:project, 2) }
 
         it "does not automatically enable the custom field" do
           expect { service.call(params) }
-            .not_to change { Project.where(id: type.project_ids).map(&:work_package_custom_field_ids) }
+            .not_to change { Project.where(id: type.type.project_ids).map(&:work_package_custom_field_ids) }
                       .from([[], []])
         end
 
@@ -145,13 +149,14 @@ module WorkPackageTypes
           type.custom_field_ids = [cf1.id, cf2.id]
 
           expect { service.call(params) }
-            .not_to change { Project.where(id: type.project_ids).map(&:work_package_custom_field_ids) }
+            .not_to change { Project.where(id: type.type.project_ids).map(&:work_package_custom_field_ids) }
                       .from([[], []])
         end
       end
     end
 
-    describe "query group handling" do
+    describe "query group handling", with_ee: %i[edit_attribute_groups] do
+      let(:model) { create(:type, name: "Types-R-Us").default_variant }
       let(:query_params) do
         statuses = create_list(:status, 2)
         sort_by = JSON::dump(["status:desc"])
@@ -166,6 +171,15 @@ module WorkPackageTypes
 
       let(:params) { { attribute_groups: [query_group_params] } }
       let(:contract_class) { UpdateFormConfigurationContract }
+
+      subject(:service) { described_class.new(user:, model:, contract_class:) }
+
+      before do
+        login_as(user)
+        # Global query saves require save_queries in any project; an admin with no
+        # projects cannot satisfy that check.
+        create(:project)
+      end
 
       it "assigns the fully parsed query to the type attribute groups" do
         expect(service.call(params)).to be_success
@@ -193,7 +207,10 @@ module WorkPackageTypes
     end
 
     context "when attribute_groups is malformed JSON" do
+      let(:model) { create(:type, name: "Types-R-Us").default_variant }
       let(:contract_class) { UpdateFormConfigurationContract }
+
+      subject(:service) { described_class.new(user:, model:, contract_class:) }
 
       it "returns a failure result" do
         result = service.call(attribute_groups: "{")
